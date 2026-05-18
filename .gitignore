@@ -1,0 +1,22 @@
+## .NET
+bin/
+obj/
+publish/
+
+## User-specific
+*.user
+*.suo
+.vs/
+.vscode/
+
+## Secrets — never commit
+appsettings.Development.json
+appsettings.*.json
+!appsettings.json
+
+## Claude Code
+.claude/
+
+## OS
+.DS_Store
+Thumbs.db

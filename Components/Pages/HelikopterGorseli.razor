@@ -1,0 +1,612 @@
+@page "/helikopter-gorseli"
+@using MudBlazor
+@using MroPlan.Models
+@using MroPlan.Models.Enums
+@using MroPlan.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Globalization
+@inject ApplicationDbContext Context
+@inject NavigationManager Nav
+
+<div class="hg-root">
+    
+    @* ─── Tuval (3D Sahne Arka Planı) ─── *@
+    <div class="hg-canvas" @onclick="SecimiTemizle">
+        <svg class="hg-svg">
+            @foreach (var node in _displayNodes)
+            {
+                <line class="hg-line @(_patlama ? "hg-line-on" : "") @(node.Secili ? "hg-line-hl" : "")"
+                      x1="50%" y1="50%"
+                      x2="@F(node.ExX)%" y2="@F(node.ExY)%" />
+            }
+        </svg>
+
+        <div class="hg-center @(_patlama ? "hg-center-burst" : "hg-center-idle")">
+            <div class="hg-ring r1"></div>
+            <div class="hg-ring r2"></div>
+            <div class="hg-ring r3"></div>
+            <div class="hg-heli-wrapper">
+                <model-viewer src="/models/heli.glb"
+                              alt="3D Helikopter Modeli"
+                              shadow-intensity="1.5"
+                              auto-rotate
+                              rotation-per-second="45deg"
+                              camera-orbit="45deg 75deg 105%"
+                              field-of-view="8deg"
+                              interaction-prompt="none"
+                              disable-zoom
+                              class="hg-model-viewer">
+                </model-viewer>
+                <div class="hg-heli-glow"></div>
+            </div>
+        </div>
+
+        @foreach (var node in _displayNodes)
+        {
+            <div class="hg-node @(node.Secili ? "hg-node-hl" : "") @GetNodeStatusClass(node)"
+                 style="@GetNodeStyle(node)"
+                 @onclick="() => ParcaVurgula(node)"
+                 @onclick:stopPropagation>
+                <div class="hg-node-body">
+                    <MudIcon Icon="@GetParcaIcon(node.ParcaAdi)" Size="Size.Small" />
+                </div>
+                <div class="hg-node-label">@Kisalt(node.ParcaAdi, 10)</div>
+            </div>
+        }
+    </div>
+
+    @* ─── Yüzen Kontrol Paneli (Dinamik Seçim) ─── *@
+    @if (!_panelAcik)
+    {
+        <div class="hg-panel-launcher" @onclick="TogglePanel">
+            <MudIcon Icon="@Icons.Material.Filled.MenuOpen" />
+            <span>MENÜ</span>
+        </div>
+    }
+
+    <div class="hg-floating-panel @(_panelAcik ? "hg-panel-show" : "hg-panel-hide")" @onclick:stopPropagation>
+        <div class="hg-panel-header">
+            <MudIcon Icon="@Icons.Material.Filled.SettingsInputComponent" Class="mr-2" />
+            <span style="flex:1">DİAGNOSTİK KONTROL</span>
+            <MudIcon Icon="@Icons.Material.Filled.Close" 
+                     Size="Size.Small" 
+                     Style="cursor:pointer; opacity:0.5" 
+                     @onclick="TogglePanel" />
+        </div>
+
+        <div class="hg-panel-content">
+            @if (string.IsNullOrEmpty(_seciliHeliGrup))
+            {
+                <div class="hg-step-info">SİSTEM MODELİ SEÇİNİZ</div>
+                <div class="hg-grid-select">
+                    @foreach (var heli in HeliTipleri.Hepsi)
+                    {
+                        <div class="hg-select-item" @onclick="() => HeliSec(heli)">
+                            <div class="hg-item-glow"></div>
+                            <MudIcon Icon="@Icons.Material.Filled.AirplanemodeActive" />
+                            <div class="hg-item-details">
+                                <span class="hg-item-title">@heli</span>
+                                <span class="hg-item-status">SİSTEM AKTİF</span>
+                            </div>
+                            <MudIcon Icon="@Icons.Material.Filled.ArrowForwardIos" Class="hg-item-arrow" />
+                        </div>
+                    }
+                </div>
+            }
+            else if (_seciliPlanId == 0)
+            {
+                <div class="hg-nav-back" @onclick="HeliGeri">
+                    <MudIcon Icon="@Icons.Material.Filled.KeyboardBackspace" Size="Size.Small" />
+                    <span>@_seciliHeliGrup</span>
+                </div>
+                <div class="hg-step-info">BAKIMDAKİ HAVA ARACI SEÇİNİZ</div>
+                @if (_aktifPlanlar.Any())
+                {
+                    <div class="hg-list-select">
+                        @foreach (var plan in _aktifPlanlar)
+                        {
+                            <div class="hg-select-row" @onclick="() => UcakSec(plan.Id)">
+                                <div class="hg-row-main">
+                                    <div class="hg-row-sn">@plan.SeriNo</div>
+                                    <div class="hg-row-status">@plan.GenelDurum</div>
+                                </div>
+                                <div class="hg-row-action">
+                                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="hg-empty-state">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" />
+                        <span>Bu tip için aktif uçak yok.</span>
+                    </div>
+                }
+            }
+            else if (string.IsNullOrEmpty(_seciliAtolyeGrup))
+            {
+                <div class="hg-nav-back" @onclick="UcakGeri">
+                    <MudIcon Icon="@Icons.Material.Filled.KeyboardBackspace" Size="Size.Small" />
+                    <span>@(_aktifPlanlar.FirstOrDefault(p => p.Id == _seciliPlanId)?.SeriNo ?? "")</span>
+                </div>
+                <div class="hg-step-info">ATÖLYE BİRİMİ SEÇİNİZ</div>
+                <div class="hg-list-select">
+                    @foreach (var atolye in GetAtolyeler(_seciliHeliGrup))
+                    {
+                        <div class="hg-select-row" @onclick="() => AtolyeSec(atolye)">
+                            <div class="hg-row-main">
+                                <div class="hg-row-sn">@atolye</div>
+                                <div class="hg-row-status">GÖREV BİRİMİ</div>
+                            </div>
+                            <div class="hg-row-action">
+                                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="hg-nav-back" @onclick="AtolyeGeri">
+                    <MudIcon Icon="@Icons.Material.Filled.KeyboardBackspace" Size="Size.Small" />
+                    <span>@Kisalt(_seciliAtolyeGrup, 15)</span>
+                </div>
+                <div class="hg-step-info">PARÇA ENVANTERİ VE DURUMU</div>
+                <div class="hg-part-list">
+                    @foreach (var node in GetParcalar(_seciliHeliGrup, _seciliAtolyeGrup))
+                    {
+                        <div class="hg-part-item @(node.Secili ? "hg-part-item-active" : "") @GetNodeStatusClass(node)"
+                             @onclick="@(() => ParcaVurgula(node))">
+                            <div class="hg-part-icon-box">
+                                <MudIcon Icon="@GetParcaIcon(node.ParcaAdi)" />
+                            </div>
+                            <div class="hg-part-details">
+                                <span class="p-title">@node.ParcaAdi</span>
+                                <span class="p-sub">P/N: @node.ParcaPN</span>
+                            </div>
+                            <div class="hg-part-indicator"></div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @* Alt Bilgi Kartı *@
+    @if (_seciliNode != null)
+    {
+        <div class="hg-detail-overlay">
+            <div class="hg-detail-card">
+                <div class="hg-detail-main">
+                    <div class="hg-detail-title">@_seciliNode.ParcaAdi</div>
+                    <div class="hg-detail-pn">P/N: @_seciliNode.ParcaPN</div>
+                    @if (_seciliNode.PersonelAdi != null)
+                    {
+                        <div style="font-size: 0.7rem; color: #86efac; margin-top: 4px;">
+                            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Style="font-size:0.9rem;" />
+                            @_seciliNode.PersonelAdi
+                        </div>
+                    }
+                </div>
+                <div class="d-flex flex-column gap-2 align-end">
+                    <div class="hg-detail-badge @GetStatusBadgeClass(_seciliNode.Durum)">@(_seciliNode.Durum ?? "HAZIR")</div>
+                    @if (_seciliPlanId > 0)
+                    {
+                        <div class="hg-nav-link" @onclick='() => Nav.NavigateTo($"/atolye-operasyon")'>
+                            Atölye'de Görüntüle →
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .hg-root { 
+        display: flex; 
+        height: calc(100vh - 80px); 
+        width: 100%;
+        overflow: hidden; 
+        position: relative; 
+        background: #050a14; 
+    }
+    
+    /* Layout Overrides to force full screen in this page only */
+    ::deep .mud-main-content { padding: 0 !important; height: 100vh; }
+    ::deep .animate-fade-in { max-width: 100% !important; padding: 0 !important; margin: 0 !important; height: 100% !important; }
+
+    .hg-panel-launcher {
+        position: absolute; top: 24px; left: 24px; z-index: 110; background: rgba(250, 204, 21, 0.15);
+        backdrop-filter: blur(12px); border: 1px solid rgba(250, 204, 21, 0.4); border-radius: 14px; padding: 12px 20px;
+        color: #FACC15; font-size: 0.7rem; font-weight: 900; cursor: pointer; display: flex; align-items: center; gap: 10px;
+        box-shadow: 0 0 30px rgba(0,0,0,0.5), 0 0 15px rgba(250,204,21,0.2); animation: fadeIn 0.4s ease;
+        letter-spacing: 1px;
+    }
+    .hg-panel-launcher:hover { background: rgba(250, 204, 21, 0.25); transform: scale(1.05); }
+
+    .hg-floating-panel {
+        position: absolute; top: 24px; left: 24px; width: 320px; background: rgba(5, 10, 20, 0.85);
+        backdrop-filter: blur(30px); border: 1px solid rgba(250, 204, 21, 0.2); border-radius: 28px;
+        z-index: 100; box-shadow: 0 30px 80px rgba(0,0,0,0.8); overflow: hidden;
+        transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .hg-panel-hide { transform: translateX(-400px) scale(0.9); opacity: 0; pointer-events: none; }
+    .hg-panel-show { transform: translateX(0) scale(1); opacity: 1; }
+
+    .hg-panel-header { 
+        padding: 20px; 
+        background: linear-gradient(90deg, rgba(250, 204, 21, 0.1), transparent); 
+        border-bottom: 1px solid rgba(250, 204, 21, 0.1); 
+        color: #FACC15; 
+        font-size: 0.7rem; 
+        font-weight: 900; 
+        letter-spacing: 2px; 
+        display: flex; 
+        align-items: center; 
+        text-shadow: 0 0 10px rgba(250,204,21,0.3);
+    }
+    
+    .hg-panel-content { padding: 16px; max-height: 75vh; overflow-y: auto; scrollbar-width: none; }
+    .hg-panel-content::-webkit-scrollbar { display: none; }
+
+    /* Selection Grid & Items */
+    .hg-step-info { padding: 0 8px 16px 8px; font-size: 0.6rem; color: rgba(255, 255, 255, 0.35); font-weight: 900; letter-spacing: 1.5px; }
+    
+    .hg-grid-select { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    
+    .hg-select-item {
+        position: relative;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 20px;
+        padding: 20px 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        overflow: hidden;
+        text-align: center;
+    }
+    .hg-select-item:hover {
+        background: rgba(250, 204, 21, 0.08);
+        border-color: rgba(250, 204, 21, 0.4);
+        transform: translateY(-5px);
+    }
+    .hg-item-glow {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(circle at 50% 50%, rgba(250, 204, 21, 0.15), transparent 70%);
+        opacity: 0; transition: opacity 0.3s;
+    }
+    .hg-select-item:hover .hg-item-glow { opacity: 1; }
+    
+    .hg-select-item .mud-icon-root { color: #FACC15; font-size: 2rem !important; opacity: 0.7; transition: all 0.3s; }
+    .hg-select-item:hover .mud-icon-root { opacity: 1; transform: scale(1.1); }
+    
+    .hg-item-details { display: flex; flex-direction: column; align-items: center; }
+    .hg-item-title { color: white; font-size: 0.75rem; font-weight: 800; line-height: 1.2; }
+    .hg-item-status { color: #22C55E; font-size: 0.5rem; font-weight: 900; margin-top: 4px; opacity: 0.6; }
+    .hg-item-arrow { display: none; }
+
+    /* Navigation Back */
+    .hg-nav-back {
+        display: flex; align-items: center; gap: 10px; padding: 0 8px 20px 8px;
+        color: #FACC15; font-size: 0.7rem; font-weight: 900; cursor: pointer;
+        text-transform: uppercase; letter-spacing: 1px;
+    }
+    .hg-nav-back:hover { opacity: 0.7; }
+
+    /* List Selection */
+    .hg-list-select { display: flex; flex-direction: column; gap: 8px; }
+    .hg-select-row {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        padding: 14px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .hg-select-row:hover {
+        background: rgba(250, 204, 21, 0.06);
+        border-color: rgba(250, 204, 21, 0.3);
+        transform: scale(1.02);
+    }
+    .hg-row-sn { color: white; font-size: 0.9rem; font-weight: 900; }
+    .hg-row-status { color: rgba(255,255,255,0.4); font-size: 0.65rem; font-weight: 700; }
+    .hg-row-action .mud-icon-root { color: #FACC15; font-size: 1.2rem !important; opacity: 0.5; }
+    .hg-select-row:hover .hg-row-action .mud-icon-root { opacity: 1; }
+
+    /* Part List */
+    .hg-part-list { display: flex; flex-direction: column; gap: 6px; }
+    .hg-part-item {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 12px;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+    .hg-part-item:hover { background: rgba(255, 255, 255, 0.05); }
+    .hg-part-item-active { border-color: #FACC15; background: rgba(250, 204, 21, 0.05); }
+    
+    .hg-part-icon-box { 
+        width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,0.05);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .hg-part-icon-box .mud-icon-root { font-size: 1.1rem !important; opacity: 0.6; }
+    .hg-part-item-active .hg-part-icon-box .mud-icon-root { color: #FACC15; opacity: 1; }
+    
+    .p-title { display: block; color: rgba(255,255,255,0.85); font-size: 0.75rem; font-weight: 700; }
+    .p-sub { display: block; color: rgba(255,255,255,0.35); font-size: 0.6rem; font-weight: 600; margin-top: 2px; }
+    
+    .hg-part-indicator { position: absolute; right: 12px; width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.1); }
+    .hg-node-bekleyen .hg-part-indicator { background: #eab308; box-shadow: 0 0 8px #eab308; }
+    .hg-node-devam .hg-part-indicator { background: #3b82f6; box-shadow: 0 0 8px #3b82f6; }
+    .hg-node-tamam .hg-part-indicator { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+
+    .hg-empty-state { padding: 30px 20px; text-align: center; color: rgba(255,255,255,0.2); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .hg-empty-state .mud-icon-root { font-size: 2rem !important; }
+    .hg-empty-state span { font-size: 0.7rem; font-weight: 700; }
+
+    .hg-canvas { position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, rgba(14,42,69,0.7) 0%, #050a14 90%); overflow: hidden; z-index: 0; }
+    .hg-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .hg-line { stroke: #FACC15; stroke-width: 0.4; opacity: 0; transition: all 1s ease; stroke-dasharray: 2 4; }
+    .hg-line-on { opacity: 0.3; }
+    .hg-line-hl { stroke: #FACC15; opacity: 0.9 !important; stroke-width: 1.2; stroke-dasharray: none; }
+    
+    .hg-center { 
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+        width: 90vh; height: 90vh; max-width: 95vw; max-height: 95vw;
+    }
+
+    .hg-heli-wrapper { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+    model-viewer { width: 100%; height: 100%; background: transparent; outline: none; }
+    .hg-heli-glow { position: absolute; width: 40%; height: 40%; background: radial-gradient(circle, rgba(250,204,21,0.15) 0%, transparent 70%); filter: blur(40px); animation: glow-pulse 4s infinite; z-index: -1; }
+    @@keyframes glow-pulse { 0%,100% { transform: scale(1); opacity: 0.3; } 50% { transform: scale(1.4); opacity: 0.6; } }
+    .hg-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: 50%; border: 1px solid rgba(250,204,21,0.05); animation: ring-spin 20s linear infinite; }
+    .r1 { width: 50%; height: 50%; }
+    .r2 { width: 70%; height: 70%; animation-direction: reverse; animation-duration: 35s; }
+    .r3 { width: 95%; height: 95%; animation-duration: 50s; }
+    
+    .hg-node { position: absolute; transform: translate(-50%, -50%); transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; z-index: 50; text-align: center; }
+    .hg-node-body { 
+        width: 42px; height: 42px; border-radius: 14px; background: rgba(5,10,20,0.9); 
+        border: 1px solid rgba(250,204,21,0.3); display: flex; align-items: center; justify-content: center; 
+        color: #FACC15; box-shadow: 0 0 20px rgba(0,0,0,0.4); transition: all 0.3s;
+    }
+    .hg-node:hover .hg-node-body { border-color: #FACC15; background: rgba(250,204,21,0.15); transform: scale(1.15) rotate(10deg); box-shadow: 0 0 25px rgba(250,204,21,0.3); }
+    .hg-node-hl .hg-node-body { border-color: #FACC15; background: #FACC15; color: #000; box-shadow: 0 0 30px rgba(250,204,21,0.5); }
+    .hg-node-label { font-size: 0.6rem; font-weight: 800; color: rgba(255,255,255,0.4); margin-top: 8px; white-space: nowrap; transition: color 0.3s; }
+    .hg-node:hover .hg-node-label { color: white; }
+    .hg-node-hl .hg-node-label { color: #FACC15; font-weight: 900; }
+
+    .hg-detail-overlay { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 100; animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+    .hg-detail-card { 
+        background: rgba(5, 10, 20, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(250,204,21,0.3); 
+        border-radius: 24px; padding: 18px 30px; display: flex; align-items: center; gap: 25px; 
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
+    .hg-detail-title { color: white; font-size: 1.1rem; font-weight: 900; }
+    .hg-detail-pn { color: rgba(255,255,255,0.4); font-size: 0.75rem; font-weight: 600; margin-top: 2px; }
+    .hg-detail-badge { background: #FACC15; color: #000; padding: 5px 14px; border-radius: 10px; font-size: 0.7rem; font-weight: 900; letter-spacing: 0.5px; }
+    
+    .hg-detail-badge-warn { background: #eab308 !important; }
+    .hg-detail-badge-devam { background: #3b82f6 !important; color: white !important; }
+    .hg-detail-badge-tamam { background: #22c55e !important; color: #000 !important; }
+    .hg-nav-link { font-size: 0.75rem; color: #FACC15; cursor: pointer; text-decoration: none; font-weight: 800; }
+    .hg-nav-link:hover { text-decoration: underline; opacity: 0.8; }
+
+    /* Node status styles */
+    .hg-node-bekleyen .hg-node-body { border-color: #eab308; color: #eab308; animation: node-pulse-warn 2s infinite; }
+    .hg-node-devam .hg-node-body { border-color: #3b82f6; color: #3b82f6; animation: node-glow-blue 2s infinite; }
+    .hg-node-tamam .hg-node-body { border-color: #22c55e; color: #22c55e; }
+    
+    @@keyframes node-pulse-warn { 0%,100% { box-shadow: 0 0 10px rgba(234,179,8,0.2); } 50% { box-shadow: 0 0 25px rgba(234,179,8,0.6); } }
+    @@keyframes node-glow-blue { 0%,100% { box-shadow: 0 0 10px rgba(59,130,246,0.2); } 50% { box-shadow: 0 0 25px rgba(59,130,246,0.6); } }
+    @@keyframes ring-spin { from { transform: translate(-50%, -50%) rotate(0); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+    @@keyframes slideUp { from { opacity: 0; transform: translate(-50%, 30px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+</style>
+
+@code {
+    private List<VizNode> _allNodes = new();
+    private List<VizNode> _displayNodes = new();
+    private List<BakimPlani> _aktifPlanlar = new();
+
+    private string _seciliHeliGrup = "";
+    private int _seciliPlanId = 0;
+    private string _seciliAtolyeGrup = "";
+    private VizNode? _seciliNode = null;
+    private bool _patlama = false;
+    private bool _panelAcik = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var parcalar = await Context.ParcaSablonlari
+                .Include(p => p.BakimGrubu)
+                .ToListAsync();
+
+            _allNodes = parcalar.Select(p => new VizNode
+            {
+                Id = p.Id,
+                ParcaAdi = p.ParcaAdi,
+                ParcaPN = p.ParcaPN,
+                IslemTuru = p.IslemTuru,
+                GrupAdi = p.BakimGrubu?.GrupAdi ?? "Genel Bakım",
+                HeliTipi = p.HeliTipi
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Veri Yükleme Hatası: {ex.Message}");
+        }
+    }
+
+    private void TogglePanel() => _panelAcik = !_panelAcik;
+
+    private void SecimiTemizle()
+    {
+        foreach (var n in _displayNodes) n.Secili = false;
+        _seciliNode = null;
+        StateHasChanged();
+    }
+
+    private async Task HeliSec(string heli)
+    {
+        _seciliHeliGrup = heli;
+        _seciliPlanId = 0;
+        _seciliAtolyeGrup = "";
+        _patlama = false;
+        _displayNodes.Clear();
+        _seciliNode = null;
+
+        _aktifPlanlar = await Context.BakimPlanlari
+            .Where(p => p.HeliTipi == heli && p.GenelDurum != nameof(BakimDurumu.Tamamlandi))
+            .OrderByDescending(p => p.KabulTarihi)
+            .AsNoTracking()
+            .ToListAsync();
+
+        StateHasChanged();
+    }
+
+    private async Task UcakSec(int planId)
+    {
+        _seciliPlanId = planId;
+        _seciliAtolyeGrup = "";
+        _seciliNode = null;
+        _displayNodes.Clear();
+        _patlama = false;
+
+        var kayitlar = await Context.BakimKontrolKayitlari
+            .Include(k => k.AtananPersonel)
+            .Where(k => k.BakimPlaniId == planId)
+            .AsNoTracking()
+            .ToListAsync();
+
+        foreach (var node in _allNodes)
+        {
+            var kayit = kayitlar.FirstOrDefault(k => k.ParcaSablonuId == node.Id);
+            if (kayit != null)
+            {
+                node.Durum = kayit.Durum;
+                node.PersonelAdi = kayit.AtananPersonel?.AdSoyad;
+            }
+            else
+            {
+                node.Durum = null;
+                node.PersonelAdi = null;
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private void AtolyeSec(string atolye)
+    {
+        _seciliAtolyeGrup = atolye;
+        var atolyeParcalari = _allNodes.Where(x => x.HeliTipi == _seciliHeliGrup && x.GrupAdi == atolye).ToList();
+        _displayNodes = HesaplaKonumlarManual(atolyeParcalari);
+        _patlama = true;
+    }
+
+    private void HeliGeri() { _seciliHeliGrup = ""; _seciliPlanId = 0; _seciliAtolyeGrup = ""; _patlama = false; _displayNodes.Clear(); _seciliNode = null; _aktifPlanlar.Clear(); }
+    private void UcakGeri() { _seciliPlanId = 0; _seciliAtolyeGrup = ""; _patlama = false; _displayNodes.Clear(); _seciliNode = null; }
+    private void AtolyeGeri() { _seciliAtolyeGrup = ""; _patlama = false; _displayNodes.Clear(); _seciliNode = null; }
+
+    private List<string> GetAtolyeler(string heli) =>
+        _allNodes.Where(x => x.HeliTipi == heli).Select(x => x.GrupAdi).Distinct().OrderBy(x => x).ToList();
+
+    private List<VizNode> GetParcalar(string heli, string atolye) =>
+        _allNodes.Where(x => x.HeliTipi == heli && x.GrupAdi == atolye).ToList();
+
+    private void ParcaVurgula(VizNode node)
+    {
+        foreach (var n in _displayNodes) n.Secili = false;
+        var displayNode = _displayNodes.FirstOrDefault(x => x.Id == node.Id);
+        if (displayNode != null) displayNode.Secili = true;
+        _seciliNode = node;
+    }
+
+    private string GetNodeStyle(VizNode node)
+    {
+        var x = _patlama ? node.ExX : 50.0;
+        var y = _patlama ? node.ExY : 50.0;
+        var op = _patlama ? "1" : "0";
+        var scale = _patlama ? "1" : "0.5";
+        return $"left:{x.ToString("F1", CultureInfo.InvariantCulture)}%;top:{y.ToString("F1", CultureInfo.InvariantCulture)}%;opacity:{op};transform:translate(-50%,-50%) scale({scale});";
+    }
+
+    private string GetNodeStatusClass(VizNode node) => node.Durum switch
+    {
+        nameof(BakimDurumu.Beklemede) => "hg-node-bekleyen",
+        nameof(BakimDurumu.DevamEdiyor) => "hg-node-devam",
+        nameof(BakimDurumu.Tamamlandi) => "hg-node-tamam",
+        _ => ""
+    };
+
+    private string GetStatusBadgeClass(string? durum) => durum switch
+    {
+        nameof(BakimDurumu.Beklemede) => "hg-detail-badge-warn",
+        nameof(BakimDurumu.DevamEdiyor) => "hg-detail-badge-devam",
+        nameof(BakimDurumu.Tamamlandi) => "hg-detail-badge-tamam",
+        _ => ""
+    };
+
+    private static List<VizNode> HesaplaKonumlarManual(List<VizNode> parcalar)
+    {
+        int n = parcalar.Count;
+        var result = new List<VizNode>();
+        for (int i = 0; i < n; i++)
+        {
+            double rad = (i * 2 * Math.PI / n) - Math.PI / 2;
+            double r = 40.0;
+            parcalar[i].ExX = 50 + r * Math.Cos(rad);
+            parcalar[i].ExY = 50 + r * Math.Sin(rad) * 0.8;
+            result.Add(parcalar[i]);
+        }
+        return result;
+    }
+
+    private static string F(double v) => v.ToString("F1", CultureInfo.InvariantCulture);
+    private static string Kisalt(string s, int len = 12) => s.Length > len ? s[..len] + "…" : s;
+
+    private string GetParcaIcon(string ad)
+    {
+        var a = ad.ToLowerInvariant();
+        if (a.Contains("rotor") || a.Contains("pal")) return Icons.Material.Filled.Air;
+        if (a.Contains("motor") || a.Contains("engine")) return Icons.Material.Filled.SettingsSuggest;
+        if (a.Contains("yakıt")) return Icons.Material.Filled.LocalGasStation;
+        if (a.Contains("elektrik")) return Icons.Material.Filled.Bolt;
+        if (a.Contains("avionik") || a.Contains("aviyonik")) return Icons.Material.Filled.Memory;
+        return Icons.Material.Filled.Build;
+    }
+
+    private class VizNode
+    {
+        public int Id { get; set; }
+        public string ParcaAdi { get; set; } = "";
+        public string ParcaPN { get; set; } = "";
+        public string IslemTuru { get; set; } = "";
+        public string GrupAdi { get; set; } = "";
+        public string HeliTipi { get; set; } = "";
+        public string? Durum { get; set; }
+        public string? PersonelAdi { get; set; }
+        public double ExX { get; set; }
+        public double ExY { get; set; }
+        public bool Secili { get; set; }
+    }
+}

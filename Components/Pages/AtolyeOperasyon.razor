@@ -1,0 +1,1775 @@
+@page "/atolye-operasyon"
+@using MudBlazor
+@using MroPlan.Models
+@using MroPlan.Models.Enums
+@using MroPlan.Services
+@using MroPlan.Data
+@using Microsoft.EntityFrameworkCore
+@inject IBakimService BakimService
+@inject IYetkinlikService YetkinlikService
+@inject ISnackbar Snackbar
+@inject ApplicationDbContext Context
+@inject ZamanYonetimServisi ZamanServisi
+
+
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-6 animate-fade-in">
+    <div class="d-flex align-center justify-space-between mb-8">
+        <div>
+            <MudText Typo="Typo.h4" Style="font-weight: 900; letter-spacing: -1.5px;">Atölye Operasyonları</MudText>
+            <MudText Typo="Typo.subtitle1" Style="color: rgba(255,255,255,0.5);">Atölye bazlı iş yükü ve personel dağılımını yönetin.</MudText>
+        </div>
+    </div>
+
+    <MudGrid Spacing="4">
+        @foreach (var atolye in _atolyeler)
+        {
+            var pSayi = GetPersonelSayisi(atolye.AtolyeKodu);
+            var iSayi = GetIsSayisi(atolye.Id);
+            var personelIdleri = _personeller.Where(p => p.AtolyeKodu == atolye.AtolyeKodu).Select(p => p.Id).ToHashSet();
+            var atananSayisi = _tumIsler
+                .Where(x => x.ParcaSablonu?.BakimGrubuId == atolye.Id
+                         && x.Durum == nameof(BakimDurumu.DevamEdiyor)
+                         && x.AtananPersonelId.HasValue
+                         && personelIdleri.Contains(x.AtananPersonelId.Value))
+                .Select(x => x.AtananPersonelId!.Value)
+                .Distinct().Count();
+            var atanmayanSayisi = pSayi - atananSayisi;
+            // Utilization: sadece DevamEdiyor işler (anlık kullanım oranı)
+            var utilizationDk = _tumIsler
+                .Where(x => x.ParcaSablonu?.BakimGrubuId == atolye.Id && x.Durum == nameof(BakimDurumu.DevamEdiyor))
+                .Sum(x => (x.ParcaSablonu?.IslemSure ?? 60) + (x.ParcaSablonu?.HazirlikSuresi ?? 15));
+            var kapasiteDk = pSayi > 0 ? pSayi * 480 * 0.85 : 480;
+            var dolulukOrani = (int)Math.Min(utilizationDk / kapasiteDk * 100, 100);
+            // Backlog: Beklemede olan iş sayısı
+            var backlogSayi = _tumIsler.Count(x => x.ParcaSablonu?.BakimGrubuId == atolye.Id && x.Durum == nameof(BakimDurumu.Beklemede));
+
+            <MudItem xs="12" sm="6" md="3">
+                <div class="atolye-card-wrapper">
+                    <MudPaper Class="@GetAtolyeClass(atolye.Id, dolulukOrani)" @onclick="@(() => AtolyeSec(atolye))" Elevation="0">
+                        <div class="d-flex justify-space-between align-start mb-2">
+                            <div class="atolye-icon-box">
+                                <MudIcon Icon="@GetAtolyeIcon(atolye.GrupAdi)" Size="Size.Medium" />
+                            </div>
+                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3); font-weight: 700;">#@atolye.AtolyeKodu</MudText>
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 800; line-height: 1.2;" Class="mb-2">@atolye.GrupAdi</MudText>
+                        <div class="mt-2 mb-4">
+                            <div class="d-flex justify-space-between mb-1">
+                                <MudText Typo="Typo.caption" Style="font-weight: 700; color: rgba(255,255,255,0.45);">İş Yükü</MudText>
+                                <MudText Typo="Typo.caption" Style="@($"font-weight: 700; color: {(dolulukOrani > 80 ? "#ef4444" : "#3b82f6")}")">@dolulukOrani%</MudText>
+                            </div>
+                            <MudProgressLinear Color="@(dolulukOrani > 80 ? Color.Error : Color.Primary)" Value="@dolulukOrani" Class="rounded-pill" Style="height: 6px;" />
+                        </div>
+                        <div class="d-flex justify-space-between mt-auto pt-3 border-t">
+                            <div class="stat-group">
+                                <MudText Typo="Typo.h6" Style="font-weight: 900; font-size: 1.1rem;">@pSayi</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3); font-weight: 600;">Personel</MudText>
+                            </div>
+                            <div class="stat-group text-center">
+                                <MudText Typo="Typo.h6" Style="font-weight: 900; font-size: 1.1rem;">@iSayi</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3); font-weight: 600;">Aktif İş</MudText>
+                            </div>
+                            <div class="stat-group text-right">
+                                <MudText Typo="Typo.h6" Style="@($"font-weight: 900; font-size: 1.1rem; color: {(backlogSayi > 0 ? "#facc15" : "rgba(255,255,255,0.3)")}")">@backlogSayi</MudText>
+                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3); font-weight: 600;">Beklemede</MudText>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-space-between mt-2 pt-2" style="border-top: 1px solid rgba(255,255,255,0.05);">
+                            <div class="d-flex align-center gap-1">
+                                <div style="width:7px; height:7px; border-radius:50%; background:#4ade80; flex-shrink:0;"></div>
+                                <MudText Typo="Typo.caption" Style="font-weight:700; color:#4ade80;">@atananSayisi Atanan</MudText>
+                            </div>
+                            <div class="d-flex align-center gap-1">
+                                <div style="width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.2); flex-shrink:0;"></div>
+                                <MudText Typo="Typo.caption" Style="@($"font-weight:700; color:{(atanmayanSayisi > 0 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)")};")">@atanmayanSayisi Atanmayan</MudText>
+                            </div>
+                        </div>
+                        @if (atolye.Id == _seciliAtolyeId)
+                        {
+                            <div class="active-indicator"></div>
+                        }
+                    </MudPaper>
+                </div>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @if (_seciliAtolyeId > 0)
+    {
+        @if (!_topluAtamaModu && !_vardiyaModu)
+        {
+            @* --- KANBAN PANOSU --- *@
+            <div class="animate-slide-up mt-12 mb-12">
+                <div class="d-flex align-center gap-3 mb-6">
+                    <MudIcon Icon="@Icons.Material.Filled.Dashboard" Color="Color.Primary" />
+                    <MudText Typo="Typo.h5" Style="font-weight: 900;">İş Akış Panosu</MudText>
+                    <div class="flex-1"></div>
+                </div>
+
+                <MudGrid Spacing="4">
+                    @* Sütun: BEKLEYEN *@
+                    <MudItem xs="12" md="4">
+                        <div class="kanban-column">
+                            <div class="column-header mb-4 d-flex align-center justify-space-between">
+                                <MudText Typo="Typo.subtitle1" Style="font-weight: 800; color: rgba(255,255,255,0.4);">BEKLEYEN</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Filled">@_islerBekleyen.Count</MudChip>
+                            </div>
+                            <div class="column-content">
+                                @foreach (var item in _islerBekleyen)
+                                {
+                                    <div class="task-card">
+                                        <div class="d-flex justify-space-between mb-3">
+                                            <div class="d-flex align-center">
+                                                <MudIcon Icon="@Icons.Material.Filled.Flight" Size="Size.Small" Color="Color.Primary" Class="mr-2"/>
+                                                <MudText Typo="Typo.body2" Style="font-weight: 800;">@item.BakimPlani?.SeriNo</MudText>
+                                            </div>
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="pa-0" Style="font-size: 0.6rem; color: rgba(255,255,255,0.3);">#@item.Id</MudChip>
+                                        </div>
+                                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.8); font-weight: 600;" Class="mb-1">@item.ParcaSablonu?.ParcaAdi</MudText>
+                                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">P/N: @item.ParcaSablonu?.ParcaPN</MudText>
+                                        <div class="mt-4 pt-3 border-t d-flex justify-space-between align-center">
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                                       OnClick="@(() => PersonelSecimiAc(item))"
+                                                       StartIcon="@Icons.Material.Filled.PersonAdd" Style="font-size: 0.65rem; border-radius: 8px;">PERSONEL ATA</MudButton>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </MudItem>
+
+                    @* Sütun: DEVAM EDEN *@
+                    <MudItem xs="12" md="4">
+                        <div class="kanban-column active-column">
+                            <div class="column-header mb-4 d-flex align-center justify-space-between">
+                                <MudText Typo="Typo.subtitle1" Style="font-weight: 800; color: #38bdf8;">İŞLEMDE</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled">@_islerDevamEden.Count</MudChip>
+                            </div>
+                            <div class="column-content">
+                                @foreach (var item in _islerDevamEden)
+                                {
+                                    <div class="task-card in-progress">
+                                        <div class="d-flex justify-space-between mb-3">
+                                            <div class="d-flex align-center">
+                                                <MudIcon Icon="@Icons.Material.Filled.Flight" Size="Size.Small" Color="Color.Info" Class="mr-2"/>
+                                                <MudText Typo="Typo.body2" Style="font-weight: 800;">@item.BakimPlani?.SeriNo</MudText>
+                                            </div>
+                                            <div class="d-flex align-center gap-1">
+                                                @if (item.EgitimModu)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text" Style="font-size: 0.55rem; font-weight: 900; padding: 0 6px;">EĞİTİM</MudChip>
+                                                }
+                                                <div class="pulse-dot"></div>
+                                            </div>
+                                        </div>
+                                        <MudText Typo="Typo.body2" Style="color: #7dd3fc; font-weight: 700;" Class="mb-1">@item.ParcaSablonu?.ParcaAdi</MudText>
+                                        <div class="mt-2 d-flex align-center">
+                                            <MudAvatar Size="Size.Small" Color="Color.Info" Style="font-size: 0.6rem;" Class="mr-2">@(item.AtananPersonel?.Ad?.Length > 0 ? item.AtananPersonel.Ad[0] : '?')</MudAvatar>
+                                            <MudText Typo="Typo.caption" Style="font-weight: 700; color: rgba(255,255,255,0.7);">@item.AtananPersonel?.AdSoyad</MudText>
+                                        </div>
+                                        <div class="mt-3 pt-2 border-t d-flex justify-end gap-1">
+                                            <MudTooltip Text="Atamayı Kaldır">
+                                                <MudIconButton Icon="@Icons.Material.Filled.PersonRemove" Color="Color.Warning" Size="Size.Small" OnClick="@(() => AtamayiKaldir(item))" />
+                                            </MudTooltip>
+                                            <MudTooltip Text="İşi Tamamla">
+                                                <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" OnClick="@(() => IsBitir(item))" />
+                                            </MudTooltip>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </MudItem>
+
+                    @* Sütun: TAMAMLANAN *@
+                    <MudItem xs="12" md="4">
+                        <div class="kanban-column">
+                            <div class="column-header mb-4 d-flex align-center justify-space-between">
+                                <MudText Typo="Typo.subtitle1" Style="font-weight: 800; color: #4ade80;">TAMAMLANAN</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">@_islerBiten.Count</MudChip>
+                            </div>
+                            <div class="column-content">
+                                @foreach (var item in _islerBiten)
+                                {
+                                    <div class="task-card completed">
+                                        <div class="d-flex align-center mb-2">
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" Class="mr-2"/>
+                                            <MudText Typo="Typo.body2" Style="font-weight: 800; color: #22c55e; text-decoration: line-through;">@item.BakimPlani?.SeriNo</MudText>
+                                        </div>
+                                        <MudText Typo="Typo.caption" Style="color: #4ade80; font-weight: 600;">@item.ParcaSablonu?.ParcaAdi tamamlandı.</MudText>
+                                        <div class="mt-3 d-flex justify-end">
+                                            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3);">@item.IslemTarihi.ToShortDateString()</MudText>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </MudItem>
+                </MudGrid>
+            </div>
+        }
+        else if (_vardiyaModu)
+        {
+            @* --- VARDİYA PLANI --- *@
+            <div class="animate-slide-up mt-10">
+                <div class="d-flex align-center gap-3 mb-8">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="VardiyaModundanCik" Color="Color.Default" />
+                    <MudIcon Icon="@Icons.Material.Filled.Groups" Color="Color.Info" />
+                    <MudText Typo="Typo.h5" Style="font-weight: 900;">Vardiya Planı</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled">
+                        @_vardiyaAtamalari.Values.SelectMany(x => x).Count() / @_islerBekleyen.Count iş planlandı
+                    </MudChip>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
+                        @_vardiyaAtamalari.Count(x => x.Value.Any()) aktif personel
+                    </MudChip>
+                    <div class="flex-1"></div>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.Shuffle"
+                               OnClick="VardiyaYenidenDagit"
+                               Style="border-radius: 10px; font-weight: 700;">
+                        Yeniden Dağıt
+                    </MudButton>
+                </div>
+
+                @* Özet bilgi şeridi *@
+                <div class="vp-ozet-serit mb-6">
+                    @{
+                        var atananIsler = _vardiyaAtamalari.Values.SelectMany(x => x).Count();
+                        var atanmamisIsler = _islerBekleyen.Count - atananIsler;
+                        var aktifPersonelSayisi = _vardiyaAtamalari.Count(x => x.Value.Any());
+                        var bostaPerson = _vardiyaAtamalari.Count(x => !x.Value.Any());
+                    }
+                    <div class="vp-ozet-kart" style="border-color: rgba(34,197,94,0.3);">
+                        <div style="font-size:1.4rem; font-weight:900; color:#4ade80;">@atananIsler</div>
+                        <div style="font-size:0.6rem; color:rgba(255,255,255,0.4); font-weight:700;">ATANAN İŞ</div>
+                    </div>
+                    @if (atanmamisIsler > 0)
+                    {
+                        <div class="vp-ozet-kart" style="border-color: rgba(239,68,68,0.3);">
+                            <div style="font-size:1.4rem; font-weight:900; color:#ef4444;">@atanmamisIsler</div>
+                            <div style="font-size:0.6rem; color:rgba(255,255,255,0.4); font-weight:700;">ATANAMAYAN İŞ</div>
+                        </div>
+                    }
+                    <div class="vp-ozet-kart" style="border-color: rgba(56,189,248,0.3);">
+                        <div style="font-size:1.4rem; font-weight:900; color:#38bdf8;">@aktifPersonelSayisi</div>
+                        <div style="font-size:0.6rem; color:rgba(255,255,255,0.4); font-weight:700;">ÇALIŞAN PERSONEL</div>
+                    </div>
+                    @if (bostaPerson > 0)
+                    {
+                        <div class="vp-ozet-kart" style="border-color: rgba(250,204,21,0.3);">
+                            <div style="font-size:1.4rem; font-weight:900; color:#facc15;">@bostaPerson</div>
+                            <div style="font-size:0.6rem; color:rgba(255,255,255,0.4); font-weight:700;">BOŞ PERSONEL</div>
+                        </div>
+                    }
+                </div>
+
+                @* Personel kartları grid *@
+                <div class="vp-grid">
+                    @foreach (var kvp in _vardiyaAtamalari.OrderByDescending(x => x.Value.Count).ThenBy(x =>
+                        _personeller.FirstOrDefault(p => p.Id == x.Key)?.AdSoyad))
+                    {
+                        var p = _personeller.FirstOrDefault(x => x.Id == kvp.Key);
+                        if (p == null) continue;
+                        var mevcutKap = _kapasiteHaritasi.GetValueOrDefault(p.Id);
+                        var planlananDk = kvp.Value.Sum(is_ => is_.ParcaSablonu?.IslemSure ?? 60) / 60.0;
+                        var toplamDolu = mevcutKap + planlananDk;
+                        var dolulukPct = (int)Math.Min(toplamDolu / NetVardiyaSuresi * 100, 100);
+                        var bos = !kvp.Value.Any();
+
+                        <div class="vp-personel-kart @(bos ? "vp-kart-bos" : "")">
+                            @* Personel başlık *@
+                            <div class="d-flex align-center gap-3 mb-4">
+                                <MudAvatar Size="Size.Medium"
+                                           Color="@(bos ? Color.Default : dolulukPct > 80 ? Color.Error : Color.Success)"
+                                           Style="font-weight:900; font-size:0.9rem;">
+                                    @(p.Ad.Length > 0 ? p.Ad[0] : '?')
+                                </MudAvatar>
+                                <div class="flex-1">
+                                    <div style="font-weight:800; font-size:0.85rem;">@p.AdSoyad</div>
+                                    <div style="color:rgba(255,255,255,0.35); font-size:0.65rem;">@p.Unvan</div>
+                                </div>
+                                @if (bos)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text"
+                                             Style="font-size:0.6rem; font-weight:700; color:rgba(255,255,255,0.3);">BOŞ</MudChip>
+                                }
+                                else
+                                {
+                                    <span style="font-size:0.75rem; font-weight:900;
+                                        color:@(dolulukPct > 80 ? "#ef4444" : dolulukPct > 50 ? "#facc15" : "#4ade80");">
+                                        @dolulukPct%
+                                    </span>
+                                }
+                            </div>
+
+                            @* Kapasite bar *@
+                            <div style="background:rgba(255,255,255,0.04); border-radius:6px; height:5px; overflow:hidden; margin-bottom:12px;">
+                                <div style="height:100%; float:left; border-radius:6px;
+                                     width:@(Math.Min((int)(mevcutKap/NetVardiyaSuresi*100),100))%;
+                                     background:rgba(59,130,246,0.7);"></div>
+                                <div style="height:100%; float:left; border-radius:6px;
+                                     width:@(Math.Min((int)(planlananDk/NetVardiyaSuresi*100), 100-(int)(mevcutKap/NetVardiyaSuresi*100)))%;
+                                     background:rgba(250,204,21,0.7);"></div>
+                            </div>
+
+                            @* Atanan işler *@
+                            @if (kvp.Value.Any())
+                            {
+                                <div class="d-flex flex-column gap-2">
+                                    @foreach (var is_ in kvp.Value.OrderByDescending(x => AciliyetPuaniHesapla(x)))
+                                    {
+                                        var aciliyet = AciliyetPuaniHesapla(is_);
+
+                                        <div class="vp-is-karti" style="border-left: 3px solid @AciliyetRenkKod(aciliyet);">
+                                            <div class="d-flex justify-space-between align-start mb-1">
+                                                <div style="font-size:0.72rem; font-weight:700;">@is_.ParcaSablonu?.ParcaAdi</div>
+                                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                               Style="padding:0; width:18px; height:18px; color:rgba(255,255,255,0.3);"
+                                                               OnClick="@(() => VardiyaIsKaldir(kvp.Key, is_))" />
+                                            </div>
+                                            <div style="font-size:0.6rem; color:rgba(255,255,255,0.35);">
+                                                @is_.ParcaSablonu?.IslemTuru · @is_.ParcaSablonu?.IslemSure dk · @is_.BakimPlani?.SeriNo
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="text-align:center; padding:16px; color:rgba(255,255,255,0.15); font-size:0.72rem;">
+                                    <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Small" />
+                                    <div>Atanacak iş yok</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @* Atanamayan işler *@
+                @{
+                    var atanmisIsIdler = _vardiyaAtamalari.Values.SelectMany(x => x).Select(x => x.Id).ToHashSet();
+                    var atanmayanIsler = _islerBekleyen.Where(x => !atanmisIsIdler.Contains(x.Id)).ToList();
+                }
+                @if (atanmayanIsler.Any())
+                {
+                    <div class="vp-atanmayan-serit mt-6">
+                        <div class="d-flex align-center gap-2 mb-3">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error" Size="Size.Small" />
+                            <MudText Typo="Typo.subtitle2" Style="color:#ef4444; font-weight:800;">
+                                ATANAMAYAN İŞLER (@atanmayanIsler.Count) — Sertifika veya kapasite yetersizliği
+                            </MudText>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                            @foreach (var is_ in atanmayanIsler)
+                            {
+                                <div style="padding:8px 12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:10px; font-size:0.7rem;">
+                                    <div style="font-weight:700; color:#fca5a5;">@is_.ParcaSablonu?.ParcaAdi</div>
+                                    <div style="color:rgba(255,255,255,0.3);">@is_.ParcaSablonu?.ParcaPN · @is_.BakimPlani?.SeriNo</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Footer *@
+                <div class="ta-footer mt-8">
+                    <MudSwitch @bind-Value="_egitimModu" Color="Color.Info" Style="margin:0;">
+                        <MudText Typo="Typo.body2" Style="@($"font-weight:700; color:{(_egitimModu ? "#38bdf8" : "rgba(255,255,255,0.4)")}")">
+                            Eğitim Modu @(_egitimModu ? "AÇIK" : "KAPALI")
+                        </MudText>
+                    </MudSwitch>
+                    <div class="flex-1"></div>
+                    <MudButton Variant="Variant.Outlined" OnClick="VardiyaModundanCik"
+                               Style="border-radius:10px; font-weight:700;">İptal</MudButton>
+                    @{
+                        var planlanmisVardiya = _vardiyaAtamalari.Values.SelectMany(x => x).Count();
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               OnClick="VardiyaPlaniniOnayla"
+                               Disabled="@(planlanmisVardiya == 0)"
+                               Style="border-radius:10px; font-weight:800;">
+                        Planı Onayla (@planlanmisVardiya iş)
+                    </MudButton>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* --- TOPLU ATAMA PLANI --- *@
+            <div class="animate-slide-up mt-10">
+                <div class="d-flex align-center gap-3 mb-6">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="TopluAtamaModundanCik" Color="Color.Default" />
+                    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Secondary" />
+                    <MudText Typo="Typo.h5" Style="font-weight: 900;">Toplu Atama Planı</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Filled">@_islerBekleyen.Count bekleyen iş</MudChip>
+                </div>
+
+                <div class="ta-layout">
+                    @* Sol: İş Tablosu *@
+                    <div class="ta-sol">
+                        <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.05em;">İŞ LİSTESİ — ACİLİYETE GÖRE SIRALANDI</MudText>
+                        <div class="ta-tablo-container">
+                            @foreach (var item in _islerBekleyen.OrderByDescending(x => AciliyetPuaniHesapla(x)))
+                            {
+                                var currentItem = item;
+                                var aciliyet = AciliyetPuaniHesapla(currentItem);
+                                var uygunlar = UygunPersonelListesi(currentItem);
+                                var secilenId = _planAtamalari.GetValueOrDefault(currentItem.Id);
+                                var sure = currentItem.ParcaSablonu?.IslemSure ?? 60;
+
+                                <div class="ta-is-satiri">
+                                    @* Aciliyet badge *@
+                                    <div class="ta-aciliyet" style="@AciliyetRengi(aciliyet)">
+                                        <span style="font-weight: 900; font-size: 0.9rem;">@aciliyet</span>
+                                        <span style="font-size: 0.55rem; opacity: 0.8;">ACİL</span>
+                                    </div>
+
+                                    @* İş bilgisi *@
+                                    <div class="ta-is-bilgi">
+                                        <div style="font-weight: 700; font-size: 0.85rem;">@currentItem.ParcaSablonu?.ParcaAdi</div>
+                                        <div style="color: rgba(255,255,255,0.4); font-size: 0.7rem;">
+                                            @currentItem.ParcaSablonu?.IslemTuru · @sure dk · @currentItem.BakimPlani?.SeriNo
+                                        </div>
+                                    </div>
+
+                                    @* Personel seçimi *@
+                                    <div class="ta-personel-sec">
+                                        <MudSelect T="int?" Value="@secilenId"
+                                                   ValueChanged="@((v) => PlanAtamayiGuncelle(currentItem.Id, v))"
+                                                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                   Placeholder="Teknisyen seç..."
+                                                   Style="min-width: 200px;">
+                                            <MudSelectItem T="int?" Value="@((int?)null)">— Atanmamış —</MudSelectItem>
+                                            @foreach (var pp in uygunlar.Where(x => x.UygunMu).OrderByDescending(x => x.UyumPuani))
+                                            {
+                                                <MudSelectItem T="int?" Value="@((int?)pp.Personel.Id)">
+                                                    ✓ @pp.Personel.AdSoyad (Sv@pp.YetkinlikSeviyesi · @pp.UyumPuani pt)
+                                                </MudSelectItem>
+                                            }
+                                            @foreach (var pp in uygunlar.Where(x => !x.UygunMu))
+                                            {
+                                                <MudSelectItem T="int?" Value="@((int?)pp.Personel.Id)" Disabled="true">
+                                                    ✗ @pp.Personel.AdSoyad — @pp.AtanamaSebebi
+                                                </MudSelectItem>
+                                            }
+                                        </MudSelect>
+
+                                    </div>
+
+                                    @* Durum ikonu *@
+                                    <div class="ta-durum-ikon">
+                                        @if (!secilenId.HasValue)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.RadioButtonUnchecked" Style="color: rgba(255,255,255,0.2);" Size="Size.Small" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @* Sağ: Personel Kapasite Kartları *@
+                    <div class="ta-sag">
+                        <MudText Typo="Typo.subtitle2" Class="mb-3" Style="color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.05em;">PERSONEL KAPASİTESİ</MudText>
+                        @foreach (var p in PersonelKartlariListesi())
+                        {
+                            var mevcut = _kapasiteHaritasi.GetValueOrDefault(p.Id);
+                            var planlanan = _planKapasitesi.GetValueOrDefault(p.Id);
+                            var toplam = mevcut + planlanan;
+                            var doluluk = (int)Math.Min(toplam / NetVardiyaSuresi * 100, 100);
+                            var atananIsler = _planAtamalari.Count(kv => kv.Value == p.Id);
+                            var yetkinlikler = _yetkinlikler.Where(y => y.SicilNo == p.SicilNo).ToList();
+
+                            <div class="ta-personel-kart">
+                                <div class="d-flex align-center mb-2">
+                                    <MudAvatar Size="Size.Small" Color="@GetPersonelAvatarColor((int)toplam)" Class="mr-2" Style="font-size: 0.75rem; font-weight: 900;">
+                                        @(p.Ad.Length > 0 ? p.Ad[0] : '?')
+                                    </MudAvatar>
+                                    <div class="flex-1">
+                                        <div style="font-weight: 700; font-size: 0.8rem;">@p.AdSoyad</div>
+                                        <div style="color: rgba(255,255,255,0.35); font-size: 0.65rem;">@p.Unvan · @atananIsler planlı iş</div>
+                                    </div>
+                                    <div style="font-weight: 900; font-size: 0.75rem; color: @(doluluk > 80 ? "#ef4444" : doluluk > 50 ? "#facc15" : "#4ade80");">
+                                        @doluluk%
+                                    </div>
+                                </div>
+                                <div style="background: rgba(255,255,255,0.05); border-radius: 6px; height: 6px; overflow: hidden;">
+                                    <div style="height: 100%; border-radius: 6px; width: @(Math.Min((int)(mevcut/NetVardiyaSuresi*100), 100))%; background: rgba(59,130,246,0.7); float: left;"></div>
+                                    <div style="height: 100%; border-radius: 6px; width: @(Math.Min((int)(planlanan/NetVardiyaSuresi*100), 100 - (int)(mevcut/NetVardiyaSuresi*100)))%; background: rgba(250,204,21,0.7); float: left;"></div>
+                                </div>
+                                <div class="d-flex justify-space-between mt-1">
+                                    <div style="font-size: 0.6rem; color: rgba(255,255,255,0.25);">
+                                        <span style="color: #3b82f6;">■</span> @mevcut.ToString("F1")s mevcut
+                                        <span style="color: #facc15; margin-left: 4px;">■</span> @planlanan.ToString("F1")s planlı
+                                    </div>
+                                    <div style="font-size: 0.6rem; color: rgba(255,255,255,0.25);">@yetkinlikler.Count sertifika</div>
+                                </div>
+                            </div>
+                        }
+                        @if (!PersonelKartlariListesi().Any())
+                        {
+                            <div style="text-align: center; padding: 32px; color: rgba(255,255,255,0.2);">
+                                <MudIcon Icon="@Icons.Material.Filled.GroupOff" Size="Size.Large" />
+                                <MudText Typo="Typo.caption" Class="mt-2">Bu atölye için aktif personel yok.</MudText>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @* Footer *@
+                <div class="ta-footer">
+                    <MudSwitch @bind-Value="_egitimModu" Color="Color.Info" Style="margin: 0;">
+                        <MudText Typo="Typo.body2" Style="@($"font-weight: 700; color: {(_egitimModu ? "#38bdf8" : "rgba(255,255,255,0.4)")};" )">
+                            Eğitim Modu @(_egitimModu ? "AÇIK" : "KAPALI")
+                        </MudText>
+                    </MudSwitch>
+
+                    @{
+                        var atanmamisSayisi = _islerBekleyen.Count(x =>
+                            !_planAtamalari.TryGetValue(x.Id, out var v) || !v.HasValue);
+                    }
+                    @if (atanmamisSayisi > 0)
+                    {
+                        <MudText Typo="Typo.caption" Style="color: #ef4444; font-weight: 700;">
+                            @atanmamisSayisi iş atanmamış
+                        </MudText>
+                    }
+
+                    <div class="flex-1"></div>
+
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.AutoAwesome"
+                               OnClick="OtomatikDagit"
+                               Style="border-radius: 10px; font-weight: 700;">
+                        Otomatik Dağıt
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               StartIcon="@Icons.Material.Filled.ClearAll"
+                               OnClick="PlanTemizle"
+                               Style="border-radius: 10px; font-weight: 700;">
+                        Temizle
+                    </MudButton>
+                    @{
+                        var planlananSayisi = _planAtamalari.Count(kv => kv.Value.HasValue);
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               OnClick="PlanOnayGoster"
+                               Disabled="@(planlananSayisi == 0)"
+                               Style="border-radius: 10px; font-weight: 800;">
+                        Planı Onayla (@planlananSayisi iş)
+                    </MudButton>
+                </div>
+            </div>
+        }
+    }
+
+    @* --- PERSONEL SEÇİM PANELİ (tekil atama) --- *@
+    @if (_secimAcik && _seciliKayit != null && !_topluAtamaModu)
+    {
+        <div class="py-backdrop" @onclick="PersonelSecimiKapat"></div>
+        <div class="py-panel-container">
+            <div class="py-panel" style="max-width: 1100px;">
+                @* Başlık *@
+                <div class="d-flex align-center justify-space-between mb-6">
+                    <div>
+                        <MudText Typo="Typo.h5" Style="font-weight:900; color:#facc15; letter-spacing:-1px;">Teknisyen Atama Operasyonu</MudText>
+                        <div class="d-flex align-center gap-3 mt-1">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text" Style="font-size:0.7rem; font-weight:700;">
+                                @_seciliKayit.ParcaSablonu?.ParcaAdi
+                            </MudChip>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">P/N: @_seciliKayit.ParcaSablonu?.ParcaPN</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">·</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">@_seciliKayit.BakimPlani?.SeriNo</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Style="font-size:0.65rem; font-weight:700;">
+                                @(_seciliKayit.ParcaSablonu?.IslemSure ?? 60) dk
+                            </MudChip>
+                        </div>
+                    </div>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="PersonelSecimiKapat" Size="Size.Medium" Style="color:rgba(255,255,255,0.3);" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px;">
+                    @* SOL: PERSONEL LİSTESİ *@
+                    <div>
+                        <MudTextField @bind-Value="_personelArama" Placeholder="İsim veya sicil no ile ara..."
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4"
+                                      Style="background: rgba(255,255,255,0.02);" />
+
+                        @{
+                            var puanlar = PersonelPuaniListesi();
+                            var uygunSayisi = puanlar.Count(x => x.UygunMu);
+                        }
+                        <div class="d-flex justify-space-between mb-3">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3); font-weight:700;">
+                                @uygunSayisi / @puanlar.Count kişi uygun
+                            </MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.2);">UYUM PUANINA GÖRE</MudText>
+                        </div>
+
+                        <div style="max-height: 500px; overflow-y: auto; padding-right: 6px;">
+                            @if (!puanlar.Any())
+                            {
+                                <div class="text-center pa-10" style="opacity: 0.3;">
+                                    <MudIcon Icon="@Icons.Material.Filled.PersonOff" Size="Size.Large" />
+                                    <MudText Typo="Typo.body2" Class="mt-2">Personel bulunamadı.</MudText>
+                                </div>
+                            }
+                            @foreach (var pp in puanlar)
+                            {
+                                var aktifIs = GetPersonelAktifIsSayisi(pp.Personel.Id);
+                                var isActive = pp.Personel.Id == _seciliOnIzlemePersonelId;
+                                <div class="p-secim-item @(isActive ? "p-secim-item-active" : "") @(!pp.UygunMu ? "p-secim-item-disabled" : "")"
+                                     @onclick="@(() => { _seciliOnIzlemePersonelId = pp.Personel.Id; })">
+                                    <MudAvatar Size="Size.Medium" Color="@(pp.UygunMu ? GetPersonelAvatarColor(aktifIs) : Color.Default)"
+                                               Class="mr-3" Style="@($"font-weight:800; opacity: {(pp.UygunMu ? "1" : "0.4")};")">
+                                        @(pp.Personel.Ad.Length > 0 ? pp.Personel.Ad[0] : '?')
+                                    </MudAvatar>
+                                    <div class="flex-1">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudText Typo="Typo.body2" Style="@($"font-weight:800; color: {(pp.UygunMu ? "inherit" : "rgba(255,255,255,0.3)")}")">
+                                                @pp.Personel.AdSoyad
+                                            </MudText>
+                                            @if (pp.YetkinlikSeviyesi > 0)
+                                            {
+                                                <span style="font-size:0.6rem; font-weight:900; padding: 1px 5px; border-radius:4px;
+                                                    background: @(pp.YetkinlikSeviyesi >= 4 ? "rgba(34,197,94,0.15)" : pp.YetkinlikSeviyesi == 3 ? "rgba(59,130,246,0.15)" : "rgba(250,204,21,0.15)");
+                                                    color: @(pp.YetkinlikSeviyesi >= 4 ? "#4ade80" : pp.YetkinlikSeviyesi == 3 ? "#60a5fa" : "#facc15");">
+                                                    SV@pp.YetkinlikSeviyesi
+                                                </span>
+                                            }
+                                        </div>
+                                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); font-size:0.65rem;">
+                                            @pp.Personel.Unvan · @aktifIs aktif iş
+                                            @if (!pp.UygunMu && !string.IsNullOrEmpty(pp.AtanamaSebebi))
+                                            {
+                                                <span style="color:#ef4444; margin-left:6px;">· @pp.AtanamaSebebi</span>
+                                            }
+                                        </MudText>
+                                    </div>
+                                    <div class="text-right" style="min-width:48px;">
+                                        @if (pp.UygunMu)
+                                        {
+                                            <div style="font-weight:900; font-size:0.9rem; color: @(pp.UyumPuani >= 80 ? "#4ade80" : pp.UyumPuani >= 50 ? "#facc15" : "#60a5fa");">
+                                                @pp.UyumPuani
+                                            </div>
+                                            <div style="font-size:0.55rem; color:rgba(255,255,255,0.2);">PUAN</div>
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Block" Size="Size.Small" Style="color:rgba(255,255,255,0.2);" />
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @* SAĞ: DETAY KARTI *@
+                    <div>
+                        @{
+                            var secilenPuani = SecilenPuani;
+                        }
+                        @if (secilenPuani != null)
+                        {
+                            var p = secilenPuani.Personel;
+                            var bugun = DateTime.UtcNow.Date;
+                            var izinde = p.IzinBaslangic.HasValue && p.IzinBitis.HasValue
+                                && bugun >= p.IzinBaslangic.Value.Date && bugun <= p.IzinBitis.Value.Date;
+                            var parcaPN = _seciliKayit.ParcaSablonu?.ParcaPN ?? "";
+                            var tümYetkinlikler = _yetkinlikler.Where(y => y.SicilNo == p.SicilNo).ToList();
+                            var gorevYetkinligi = tümYetkinlikler.FirstOrDefault(y => y.ParcaPN == parcaPN);
+                            var mevcutKap = _kapasiteHaritasi.GetValueOrDefault(p.Id);
+                            var aktifIs = GetPersonelAktifIsSayisi(p.Id);
+                            var kalanSaat = NetVardiyaSuresi - mevcutKap;
+                            var gorevSure = (_seciliKayit.ParcaSablonu?.IslemSure ?? 60) / 60.0;
+                            var baslatilabilir = secilenPuani.UygunMu;
+
+                            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 24px; padding: 28px; height: 100%; display: flex; flex-direction: column; gap: 20px;">
+                                @* Profil başlığı *@
+                                <div class="d-flex align-center gap-4">
+                                    <div class="py-avatar-large" style="background: @(secilenPuani.UygunMu ? "var(--gold)" : "rgba(255,255,255,0.1)");">
+                                        @(p.Ad.Length > 0 ? p.Ad[0] : '?')
+                                    </div>
+                                    <div class="flex-1">
+                                        <MudText Typo="Typo.h6" Style="font-weight:900; line-height:1.2;">@p.AdSoyad</MudText>
+                                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">@p.Unvan</MudText>
+                                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">Sicil: @p.SicilNo · @p.CalistigiYer</MudText>
+                                    </div>
+                                    @if (secilenPuani.UygunMu)
+                                    {
+                                        <div style="text-align:center; background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); border-radius:12px; padding: 8px 12px;">
+                                            <div style="font-size:1.4rem; font-weight:900; color:#4ade80;">@secilenPuani.UyumPuani</div>
+                                            <div style="font-size:0.55rem; color:rgba(74,222,128,0.6); font-weight:700;">UYUM PUANI</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Style="font-size:0.65rem; font-weight:800;">UYGUN DEĞİL</MudChip>
+                                    }
+                                </div>
+
+                                @* Durum satırları *@
+                                <div style="display:flex; flex-direction:column; gap:8px;">
+                                    @* İzin durumu *@
+                                    <div class="detail-satir">
+                                        <MudIcon Icon="@(izinde ? Icons.Material.Filled.BeachAccess : Icons.Material.Filled.Work)" Size="Size.Small"
+                                                 Style="@($"color: {(izinde ? "#ef4444" : "#4ade80")}")" Class="mr-3"/>
+                                        <MudText Typo="Typo.body2" Style="font-weight:700;">Durum</MudText>
+                                        <div class="flex-1"></div>
+                                        @if (izinde)
+                                        {
+                                            <span style="font-size:0.72rem; font-weight:700; color:#ef4444;">İZİNDE (@p.IzinBaslangic!.Value.ToString("dd.MM") – @p.IzinBitis!.Value.ToString("dd.MM"))</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size:0.72rem; font-weight:700; color:#4ade80;">AKTİF — MÜSAIT</span>
+                                        }
+                                    </div>
+
+                                    @* Aktif iş yükü *@
+                                    <div class="detail-satir">
+                                        <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" Style="color:#60a5fa;" Class="mr-3"/>
+                                        <MudText Typo="Typo.body2" Style="font-weight:700;">Aktif İş Yükü</MudText>
+                                        <div class="flex-1"></div>
+                                        <span style="font-size:0.72rem; font-weight:700; color:@GetIsYukuRengi(aktifIs);">
+                                            @aktifIs iş / @mevcutKap.ToString("F1") saat dolu
+                                        </span>
+                                    </div>
+
+                                    @* Kalan kapasite *@
+                                    <div class="detail-satir">
+                                        <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Style="color:#a78bfa;" Class="mr-3"/>
+                                        <MudText Typo="Typo.body2" Style="font-weight:700;">Kalan Kapasite</MudText>
+                                        <div class="flex-1"></div>
+                                        <span style="font-size:0.72rem; font-weight:700; color: @(kalanSaat >= gorevSure ? "#4ade80" : "#ef4444");">
+                                            @kalanSaat.ToString("F1") / @NetVardiyaSuresi saat
+                                        </span>
+                                    </div>
+                                    @{
+                                        var dolulukPct = Math.Min((int)(mevcutKap / NetVardiyaSuresi * 100), 100);
+                                        var gorevPct = Math.Min((int)(gorevSure / NetVardiyaSuresi * 100), 100 - dolulukPct);
+                                    }
+                                    <div style="background: rgba(255,255,255,0.05); border-radius: 6px; height: 6px; overflow:hidden; margin-bottom:4px;">
+                                        <div style="height:100%; width:@(dolulukPct)%; background:#3b82f6; float:left;"></div>
+                                        <div style="height:100%; width:@(gorevPct)%; background:rgba(250,204,21,0.6); float:left;"></div>
+                                    </div>
+
+                                    @* Bu göreve yetkinlik *@
+                                    <div class="detail-satir" style="margin-top:4px;">
+                                        <MudIcon Icon="@(gorevYetkinligi != null ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.GppBad)"
+                                                 Size="Size.Small" Style="@($"color: {(gorevYetkinligi != null ? "#4ade80" : "#ef4444")}")" Class="mr-3"/>
+                                        <MudText Typo="Typo.body2" Style="font-weight:700;">Bu Görev İçin Sertifika</MudText>
+                                        <div class="flex-1"></div>
+                                        @if (gorevYetkinligi != null)
+                                        {
+                                            <span style="font-size:0.72rem; font-weight:700; color:#4ade80;">
+                                                SV@gorevYetkinligi.YetkinlikSeviyesi
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size:0.72rem; font-weight:700; color:#ef4444;">SERTİFİKA YOK</span>
+                                        }
+                                    </div>
+                                </div>
+
+                                @* Tüm sertifikalar *@
+                                @if (tümYetkinlikler.Any())
+                                {
+                                    <div>
+                                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3); font-weight:700; letter-spacing:0.05em;" Class="mb-2">TÜM SERTİFİKALAR (@tümYetkinlikler.Count)</MudText>
+                                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                                            @foreach (var y in tümYetkinlikler.OrderByDescending(x => x.YetkinlikSeviyesi).Take(12))
+                                            {
+                                                <span style="font-size:0.6rem; font-weight:700; padding: 3px 8px; border-radius:6px;
+                                                    background: @(y.ParcaPN == parcaPN ? "rgba(250,204,21,0.15)" : "rgba(255,255,255,0.04)");
+                                                    color: @(y.ParcaPN == parcaPN ? "#facc15" : "rgba(255,255,255,0.4)");
+                                                    border: 1px solid @(y.ParcaPN == parcaPN ? "rgba(250,204,21,0.3)" : "rgba(255,255,255,0.06)");">
+                                                    @y.ParcaPN · Sv@y.YetkinlikSeviyesi
+                                                </span>
+                                            }
+                                            @if (tümYetkinlikler.Count > 12)
+                                            {
+                                                <span style="font-size:0.6rem; color:rgba(255,255,255,0.2);">+@(tümYetkinlikler.Count - 12) daha</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                @* GÖREVİ BAŞLAT *@
+                                <div class="mt-auto">
+                                    @if (!secilenPuani.UygunMu)
+                                    {
+                                        <div style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px;">
+                                            <MudText Typo="Typo.body2" Style="color:#ef4444; font-weight:700;">
+                                                ✗ @secilenPuani.AtanamaSebebi
+                                            </MudText>
+                                        </div>
+                                    }
+                                    <MudButton Variant="Variant.Filled" Color="@(baslatilabilir ? Color.Success : Color.Default)"
+                                               FullWidth="true" Size="Size.Large"
+                                               StartIcon="@(baslatilabilir ? Icons.Material.Filled.AssignmentInd : Icons.Material.Filled.Block)"
+                                               OnClick="AtaVeBaslat"
+                                               Disabled="@(!baslatilabilir)"
+                                               Style="height: 56px; border-radius: 16px; font-weight: 900; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(34,197,94,0.3);">
+                                        @if (baslatilabilir)
+                                        {
+                                            <span>GÖREVİ BAŞLAT</span>
+                                        }
+                                        else
+                                        {
+                                            <span>ATAMA YAPILAMAZ</span>
+                                        }
+                                    </MudButton>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-column align-center justify-center" style="height:100%; opacity:0.2;">
+                                <MudIcon Icon="@Icons.Material.Filled.TouchApp" Size="Size.Large" Style="font-size:4rem;" />
+                                <MudText Typo="Typo.body1" Class="mt-4">Önizleme için soldan bir teknisyen seçin.</MudText>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* --- TAMAMLAMA DİYALOGU --- *@
+    @if (_tamamlaDialogAcik && _tamamlanacakKayit != null)
+    {
+        var tahmin = _tamamlanacakKayit.ParcaSablonu?.IslemSure ?? 60;
+        var oran   = tahmin > 0 ? (double)_gercekSureDk / tahmin : 1.0;
+        var uyari  = oran > 2.5 || (oran < 0.3 && _gercekSureDk > 0);
+
+        <div class="py-backdrop" @onclick="@(() => _tamamlaDialogAcik = false)"></div>
+        <div class="py-panel-container">
+            <div class="py-panel" style="max-width: 460px;">
+                <div class="d-flex align-center justify-space-between mb-5">
+                    <div>
+                        <MudText Typo="Typo.h6" Style="font-weight: 900; color: #4ade80;">İş Tamamlandı</MudText>
+                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">
+                            @_tamamlanacakKayit.ParcaSablonu?.ParcaAdi · @_tamamlanacakKayit.BakimPlani?.SeriNo
+                        </MudText>
+                    </div>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   OnClick="@(() => _tamamlaDialogAcik = false)"
+                                   Style="color: rgba(255,255,255,0.3);" />
+                </div>
+
+                @* Bilgi satırları *@
+                <div style="background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px;">
+                    <div class="d-flex justify-space-between">
+                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">Tahmini süre</MudText>
+                        <MudText Typo="Typo.body2" Style="font-weight: 700;">@tahmin dk</MudText>
+                    </div>
+                    <div class="d-flex justify-space-between">
+                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">Başlangıç</MudText>
+                        <MudText Typo="Typo.body2" Style="font-weight: 700;">
+                            @_tamamlanacakKayit.IslemTarihi.ToLocalTime().ToString("dd.MM HH:mm")
+                        </MudText>
+                    </div>
+                    <div class="d-flex justify-space-between">
+                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">Atanan personel</MudText>
+                        <MudText Typo="Typo.body2" Style="font-weight: 700;">
+                            @(_tamamlanacakKayit.AtananPersonel?.AdSoyad ?? "—")
+                        </MudText>
+                    </div>
+                </div>
+
+                @* Gerçek süre girişi *@
+                <MudNumericField T="int" @bind-Value="_gercekSureDk"
+                                 Label="Gerçek Süre (dakika)"
+                                 Variant="Variant.Outlined"
+                                 Min="1" Max="1440"
+                                 FullWidth="true"
+                                 Class="mb-3"
+                                 AdornmentIcon="@Icons.Material.Filled.Timer"
+                                 Adornment="Adornment.Start" />
+
+                @* Uyarı *@
+                @if (uyari)
+                {
+                    <div style="background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;">
+                        <MudText Typo="Typo.caption" Style="color: #facc15;">
+                            ⚠ Girilen süre (@_gercekSureDk dk) tahminden çok @(oran > 2.5 ? "fazla" : "az"). Doğru mu?
+                        </MudText>
+                    </div>
+                }
+
+                <div class="d-flex gap-3 justify-end mt-2">
+                    <MudButton Variant="Variant.Outlined"
+                               OnClick="@(() => _tamamlaDialogAcik = false)"
+                               Style="border-radius: 10px;">İptal</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               OnClick="IsBitirOnayla"
+                               Style="border-radius: 10px; font-weight: 800;">
+                        Tamamla ve Kaydet
+                    </MudButton>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* --- ONAY DİYALOGU --- *@
+    @if (_onayDialogAcik)
+    {
+        var risk = RiskSkoru();
+        var atananlar = _planAtamalari.Where(kv => kv.Value.HasValue).ToList();
+        var atanmayanlar = _islerBekleyen.Where(x => !_planAtamalari.TryGetValue(x.Id, out var v) || !v.HasValue).ToList();
+
+        <div class="py-backdrop" @onclick="@(() => _onayDialogAcik = false)"></div>
+        <div class="py-panel-container">
+            <div class="py-panel" style="max-width: 640px;">
+                <div class="d-flex align-center justify-space-between mb-4">
+                    <MudText Typo="Typo.h5" Style="font-weight:900; color:var(--gold);">Plan Özeti</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _onayDialogAcik = false)" Style="color:rgba(255,255,255,0.3);" />
+                </div>
+
+                @* Risk skoru *@
+                <div class="onay-risk-bar mb-4" style="background: @(risk == 0 ? "rgba(34,197,94,0.1)" : risk < 40 ? "rgba(250,204,21,0.1)" : "rgba(239,68,68,0.1)"); border: 1px solid @(risk == 0 ? "rgba(34,197,94,0.3)" : risk < 40 ? "rgba(250,204,21,0.3)" : "rgba(239,68,68,0.3)"); border-radius: 12px; padding: 12px 16px;">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@(risk == 0 ? Icons.Material.Filled.Shield : Icons.Material.Filled.Warning)"
+                                 Style="@($"color: {(risk == 0 ? "#4ade80" : risk < 40 ? "#facc15" : "#ef4444")}")" />
+                        <MudText Typo="Typo.body2" Style="font-weight: 700;">
+                            Risk Skoru: @risk — @(risk == 0 ? "Düşük Risk" : risk < 40 ? "Orta Risk" : "Yüksek Risk")
+                        </MudText>
+                        @if (_egitimModu)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled" Style="font-size: 0.65rem;">EĞİTİM MODU</MudChip>
+                        }
+                    </div>
+                </div>
+
+                @* Atamalar listesi *@
+                @if (atananlar.Any())
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mb-2" Style="color: #4ade80; font-weight: 700;">✓ Atanacak İşler (@atananlar.Count)</MudText>
+                    <div style="max-height: 250px; overflow-y: auto; margin-bottom: 16px;">
+                        @foreach (var kv in atananlar)
+                        {
+                            var is_ = _islerBekleyen.FirstOrDefault(x => x.Id == kv.Key);
+                            var personel = _personeller.FirstOrDefault(p => p.Id == kv.Value!.Value);
+                            var yetk = _yetkinlikler.FirstOrDefault(y => y.SicilNo == personel?.SicilNo && y.ParcaPN == is_?.ParcaSablonu?.ParcaPN);
+
+                            <div style="padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px; border-left: 3px solid #22c55e;">
+                                <div style="font-weight: 700; font-size: 0.82rem;">@is_?.ParcaSablonu?.ParcaAdi</div>
+                                <div style="color: rgba(255,255,255,0.5); font-size: 0.72rem;">
+                                    → @personel?.AdSoyad (Sv@(yetk?.YetkinlikSeviyesi ?? 0))
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* Atanmayanlar *@
+                @if (atanmayanlar.Any())
+                {
+                    <div style="padding: 12px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; margin-bottom: 16px;">
+                        <MudText Typo="Typo.body2" Style="font-weight: 700; color: #ef4444; margin-bottom: 6px;">⚠ Atanmayan İşler (@atanmayanlar.Count)</MudText>
+                        @foreach (var is_ in atanmayanlar)
+                        {
+                            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.5); margin-bottom: 2px;">· @is_.ParcaSablonu?.ParcaAdi (@is_.BakimPlani?.SeriNo)</div>
+                        }
+                    </div>
+                }
+
+                <div class="d-flex gap-3 justify-end mt-4">
+                    <MudButton Variant="Variant.Outlined" OnClick="@(() => _onayDialogAcik = false)" Style="border-radius: 10px;">İptal</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="PlanOnayla"
+                               StartIcon="@Icons.Material.Filled.CheckCircle" Style="border-radius: 10px; font-weight: 800;">
+                        Onayla ve Uygula (@atananlar.Count iş)
+                    </MudButton>
+                </div>
+            </div>
+        </div>
+    }
+</MudContainer>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+    .animate-slide-up { animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    @@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @@keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Atölye Kartları - Siber Tasarım */
+    .atolye-card-wrapper { perspective: 1000px; height: 100%; }
+    .atolye-card {
+        padding: 28px; border-radius: 24px; 
+        background: rgba(25, 30, 35, 0.7);
+        backdrop-filter: blur(12px);
+        cursor: pointer; border: 1px solid rgba(250, 204, 21, 0.1);
+        transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        display: flex; flex-direction: column; height: 100%;
+        position: relative; overflow: hidden;
+    }
+    .atolye-card:hover {
+        transform: translateY(-10px) rotateX(4deg);
+        background: rgba(30, 35, 40, 0.9);
+        box-shadow: 0 20px 40px -10px rgba(0,0,0,0.8), 0 0 20px rgba(250, 204, 21, 0.1);
+        border-color: rgba(250, 204, 21, 0.5);
+    }
+    .atolye-card-active {
+        border: 2px solid #facc15 !important;
+        background: linear-gradient(145deg, rgba(250, 204, 21, 0.08) 0%, rgba(15, 20, 25, 0.95) 100%) !important;
+        box-shadow: 0 0 30px rgba(250, 204, 21, 0.2), inset 0 0 20px rgba(250, 204, 21, 0.05);
+    }
+    .atolye-card-urgent { 
+        animation: cyber-red-pulse 2s infinite; 
+        border-color: rgba(239, 68, 68, 0.5) !important;
+    }
+    @@keyframes cyber-red-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+        70% { box-shadow: 0 0 25px 5px rgba(239, 68, 68, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    
+    .atolye-icon-box {
+        width: 48px; height: 48px; border-radius: 14px;
+        background: rgba(250, 204, 21, 0.05); display: flex; align-items: center;
+        justify-content: center; transition: all 0.4s ease; color: #facc15;
+        border: 1px solid rgba(250, 204, 21, 0.1);
+    }
+    .atolye-card:hover .atolye-icon-box { 
+        background: #facc15; color: #000; 
+        transform: scale(1.1) rotate(5deg);
+        box-shadow: 0 0 15px rgba(250, 204, 21, 0.5);
+    }
+
+    /* Kanban Panosu */
+    .kanban-column {
+        background: rgba(15, 20, 25, 0.5); border-radius: 28px;
+        padding: 24px; min-height: 600px; 
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+    }
+    .active-column { 
+        background: rgba(56, 189, 248, 0.03); 
+        border-color: rgba(56, 189, 248, 0.15); 
+        box-shadow: inset 0 0 40px rgba(56, 189, 248, 0.02);
+    }
+    
+    .task-card {
+        background: rgba(255, 255, 255, 0.03); 
+        padding: 20px; border-radius: 18px;
+        margin-bottom: 20px; border: 1px solid rgba(255, 255, 255, 0.06);
+        transition: all 0.3s ease; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        position: relative; overflow: hidden;
+    }
+    .task-card::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+        background: rgba(255, 255, 255, 0.1);
+    }
+    .task-card:hover { 
+        transform: scale(1.02) translateX(5px); 
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(250, 204, 21, 0.3);
+    }
+    .task-card.in-progress { border-left: 4px solid #38bdf8; }
+    .task-card.in-progress::before { background: #38bdf8; box-shadow: 0 0 10px #38bdf8; }
+    .task-card.completed { 
+        background: rgba(34, 197, 94, 0.03); 
+        border-color: rgba(34, 197, 94, 0.1); 
+        opacity: 0.8;
+    }
+    .task-card.completed::before { background: #22c55e; }
+
+    .pulse-dot {
+        width: 10px; height: 10px; border-radius: 50%; background: #38bdf8;
+        box-shadow: 0 0 10px #38bdf8;
+        animation: cyber-pulse 2s infinite;
+    }
+    @@keyframes cyber-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+    }
+
+    /* Personel Seçim Paneli (Global py-panel stili ile uyumlu) */
+    .py-backdrop { 
+        position: fixed; inset: 0; 
+        background: rgba(0, 0, 0, 0.8); 
+        z-index: 1200; backdrop-filter: blur(12px); 
+    }
+    .py-panel-container { 
+        position: fixed; inset: 0; 
+        display: flex; align-items: center; justify-content: center; 
+        z-index: 1201; pointer-events: none; padding: 20px; 
+    }
+    .py-panel { 
+        pointer-events: all; 
+        width: 100%; max-width: 950px; 
+        max-height: 90vh; 
+        background: rgba(15, 20, 25, 0.98); 
+        border: 1px solid rgba(250, 204, 21, 0.2); 
+        border-radius: 32px; 
+        box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.9); 
+        padding: 40px; 
+        overflow-y: auto; 
+        animation: py-pop-center 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+    }
+    @@keyframes py-pop-center { 
+        from { opacity: 0; transform: scale(0.9) translateY(40px); } 
+        to { opacity: 1; transform: scale(1) translateY(0); } 
+    }
+
+    .p-secim-item {
+        display: flex; align-items: center; padding: 18px;
+        background: rgba(255, 255, 255, 0.02); 
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 18px; cursor: pointer; transition: all 0.3s ease;
+        margin-bottom: 8px;
+    }
+    .p-secim-item:hover { 
+        background: rgba(250, 204, 21, 0.06); 
+        border-color: rgba(250, 204, 21, 0.3); 
+        transform: translateX(8px);
+        box-shadow: -5px 0 15px rgba(250, 204, 21, 0.1);
+    }
+
+    /* Vardiya Planı */
+    .vp-ozet-serit {
+        display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .vp-ozet-kart {
+        padding: 16px 24px; border-radius: 18px; text-align: center;
+        background: rgba(255,255,255,0.02); border: 1px solid;
+        min-width: 100px;
+    }
+    .vp-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+    }
+    .vp-personel-kart {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 22px; padding: 22px;
+        transition: all 0.3s ease;
+    }
+    .vp-personel-kart:hover {
+        border-color: rgba(250,204,21,0.25);
+        box-shadow: 0 0 20px rgba(250,204,21,0.05);
+    }
+    .vp-kart-bos {
+        opacity: 0.45;
+        border-style: dashed;
+    }
+    .vp-is-karti {
+        background: rgba(255,255,255,0.03);
+        border-radius: 10px; padding: 8px 10px;
+        border-left-width: 3px; border-left-style: solid;
+    }
+    .vp-atanmayan-serit {
+        background: rgba(239,68,68,0.04);
+        border: 1px solid rgba(239,68,68,0.15);
+        border-radius: 18px; padding: 20px 24px;
+    }
+
+    /* Toplu Atama Footer */
+    .ta-footer {
+        display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+        position: sticky; bottom: 0; margin-top: 30px;
+        background: rgba(20, 25, 30, 0.9); 
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px; padding: 20px 32px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 -20px 50px rgba(0,0,0,0.6);
+        z-index: 100;
+    }
+
+    .py-avatar-large {
+        width: 64px; height: 64px; border-radius: 20px;
+        background: var(--gold); color: black;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.5rem; font-weight: 900;
+        box-shadow: 0 0 20px rgba(250, 204, 21, 0.3);
+    }
+    .p-secim-item-active {
+        background: rgba(250, 204, 21, 0.12) !important;
+        border-color: rgba(250, 204, 21, 0.6) !important;
+        box-shadow: 0 0 15px rgba(250, 204, 21, 0.1);
+    }
+    .p-secim-item-disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+    .p-secim-item-disabled:hover {
+        transform: none;
+        background: rgba(255, 255, 255, 0.02);
+        border-color: rgba(255, 255, 255, 0.05);
+        box-shadow: none;
+    }
+    .detail-satir {
+        display: flex; align-items: center; padding: 8px 12px;
+        background: rgba(255,255,255,0.02); border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.04);
+    }
+</style>
+
+@code {
+    private const double NetVardiyaSuresi = 8.0;
+
+    private List<BakimGrubu> _atolyeler = new();
+    private List<BakimKontrolKaydi> _tumIsler = new();
+    private List<Personel> _personeller = new();
+    private List<Yetkinlik> _yetkinlikler = new();
+    private int _seciliAtolyeId;
+
+    // Tekil atama
+    private bool _secimAcik;
+    private BakimKontrolKaydi? _seciliKayit;
+    private string _personelArama = string.Empty;
+    private int _seciliOnIzlemePersonelId = 0;
+    private List<PersonelPuani> _tekAtamaPuanlari = new();
+
+    // Toplu atama
+    private bool _topluAtamaModu;
+    private bool _egitimModu;
+    private bool _onayDialogAcik;
+
+    // Vardiya planı
+    private bool _vardiyaModu;
+    private Dictionary<int, List<BakimKontrolKaydi>> _vardiyaAtamalari = new();
+    private Dictionary<int, int?> _planAtamalari = new();
+    private Dictionary<int, double> _kapasiteHaritasi = new();
+    private Dictionary<int, double> _planKapasitesi = new();
+
+
+    // İş tamamlama dialog
+    private bool _tamamlaDialogAcik;
+    private BakimKontrolKaydi? _tamamlanacakKayit;
+    private int _gercekSureDk;
+
+    private record PersonelPuani(Personel Personel, int UyumPuani, bool UygunMu, string? AtanamaSebebi, int YetkinlikSeviyesi);
+
+    private List<BakimKontrolKaydi> _filtrelenmisIsler => _tumIsler
+        .Where(x => x.ParcaSablonu?.BakimGrubuId == _seciliAtolyeId)
+        .ToList();
+
+    private List<BakimKontrolKaydi> _islerBekleyen => _filtrelenmisIsler
+        .Where(x => x.Durum.Equals(nameof(BakimDurumu.Beklemede), StringComparison.OrdinalIgnoreCase)).ToList();
+    private List<BakimKontrolKaydi> _islerDevamEden => _filtrelenmisIsler
+        .Where(x => x.Durum.Equals(nameof(BakimDurumu.DevamEdiyor), StringComparison.OrdinalIgnoreCase)).ToList();
+    private List<BakimKontrolKaydi> _islerBiten => _filtrelenmisIsler
+        .Where(x => x.Durum.Equals(nameof(BakimDurumu.Tamamlandi), StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync() => await VerileriYukle();
+
+    private async Task VerileriYukle()
+    {
+        _atolyeler = await Context.BakimGruplari.ToListAsync();
+        _tumIsler = await Context.BakimKontrolKayitlari
+            .Include(x => x.BakimPlani)
+            .Include(x => x.ParcaSablonu)
+                .ThenInclude(p => p!.BakimGrubu)
+            .Include(x => x.AtananPersonel)
+            .Include(x => x.SupervisorPersonel)
+            .ToListAsync();
+        _personeller = await Context.Personeller.ToListAsync();
+        _yetkinlikler = await Context.Yetkinlikler.ToListAsync();
+
+        _kapasiteHaritasi = _tumIsler
+            .Where(x => x.Durum == nameof(BakimDurumu.DevamEdiyor) && x.AtananPersonelId.HasValue)
+            .GroupBy(x => x.AtananPersonelId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(x => (x.ParcaSablonu?.IslemSure ?? 60) / 60.0));
+    }
+
+    // --- Atölye kart yardımcıları ---
+
+    private int GetPersonelSayisi(string? atolyeKodu) =>
+        _personeller.Count(x => x.AtolyeKodu == atolyeKodu);
+
+    private int GetIsSayisi(int atolyeId) =>
+        _tumIsler.Count(x => x.ParcaSablonu?.BakimGrubuId == atolyeId && x.Durum != nameof(BakimDurumu.Tamamlandi));
+
+    private int GetPersonelAktifIsSayisi(int personelId) =>
+        _tumIsler.Count(x => x.AtananPersonelId == personelId && x.Durum == nameof(BakimDurumu.DevamEdiyor));
+
+    private string GetIsYukuRengi(int aktifIs) => aktifIs switch { 0 => "#4ade80", 1 => "#facc15", _ => "#ef4444" };
+
+    private Color GetPersonelAvatarColor(int aktifIs) => aktifIs switch { 0 => Color.Success, 1 => Color.Warning, _ => Color.Error };
+
+    private string GetAtolyeClass(int id, int doluluk)
+    {
+        var cls = id == _seciliAtolyeId ? "atolye-card atolye-card-active" : "atolye-card";
+        if (doluluk > 80) cls += " atolye-card-urgent";
+        return cls;
+    }
+
+    private string GetAtolyeIcon(string grupAdi)
+    {
+        var n = grupAdi.ToLower();
+        if (n.Contains("avionik") || n.Contains("aviyonik")) return Icons.Material.Filled.Memory;
+        if (n.Contains("boya")) return Icons.Material.Filled.Brush;
+        if (n.Contains("elektrik")) return Icons.Material.Filled.Bolt;
+        if (n.Contains("gövde") || n.Contains("govde")) return Icons.Material.Filled.Handyman;
+        if (n.Contains("hidrolik")) return Icons.Material.Filled.WaterDrop;
+        if (n.Contains("motor")) return Icons.Material.Filled.SettingsSuggest;
+        if (n.Contains("pal") || n.Contains("rotor")) return Icons.Material.Filled.Air;
+        if (n.Contains("tahribatsız") || n.Contains("ndt")) return Icons.Material.Filled.Radar;
+        if (n.Contains("transmisyon")) return Icons.Material.Filled.Settings;
+        if (n.Contains("uçuş") || n.Contains("ucus")) return Icons.Material.Filled.Gamepad;
+        return Icons.Material.Filled.PrecisionManufacturing;
+    }
+
+    private void AtolyeSec(BakimGrubu a)
+    {
+        _seciliAtolyeId = a.Id;
+        _topluAtamaModu = false;
+        _vardiyaModu = false;
+        _planAtamalari.Clear();
+        _planKapasitesi.Clear();
+
+        _vardiyaAtamalari.Clear();
+    }
+
+    // --- Vardiya Planı ---
+
+    private void VardiyaPlaniniOlustur()
+    {
+        _vardiyaModu = true;
+        _topluAtamaModu = false;
+        _egitimModu = false;
+        VardiyaYenidenDagit();
+    }
+
+    private void VardiyaYenidenDagit()
+    {
+        _vardiyaAtamalari.Clear();
+
+        // Atölyedeki tüm aktif personeli başlangıçta boş listelerle doldur
+        var atolye = _atolyeler.FirstOrDefault(a => a.Id == _seciliAtolyeId);
+        var atSolPersoneller = _personeller
+            .Where(p => p.Durum == "Aktif" && p.AtolyeKodu == atolye?.AtolyeKodu)
+            .OrderBy(p => _kapasiteHaritasi.GetValueOrDefault(p.Id))  // en az yüklü önce
+            .ToList();
+
+        foreach (var p in atSolPersoneller)
+            _vardiyaAtamalari[p.Id] = new List<BakimKontrolKaydi>();
+
+        // Kapasite takip (mevcut + planlanan)
+        var kapasiteTakip = atSolPersoneller
+            .ToDictionary(p => p.Id, p => _kapasiteHaritasi.GetValueOrDefault(p.Id));
+
+        // İşleri aciliyete göre sırala
+        var siraliIsler = _islerBekleyen.OrderByDescending(x => AciliyetPuaniHesapla(x)).ToList();
+
+        foreach (var is_ in siraliIsler)
+        {
+            var parcaPN = is_.ParcaSablonu?.ParcaPN ?? "";
+            var gereklSure = ((is_.ParcaSablonu?.IslemSure ?? 60) + (is_.ParcaSablonu?.HazirlikSuresi ?? 15)) / 60.0;
+
+            // Uygun personeli puana göre sırala, AMA en az yüklü olan öne geçsin (yayma)
+            var uygunlar = atSolPersoneller
+                .Where(p =>
+                {
+                    if (p.Durum != "Aktif") return false;
+                    var bugun = DateTime.UtcNow.Date;
+                    if (p.IzinBaslangic.HasValue && p.IzinBitis.HasValue
+                        && bugun >= p.IzinBaslangic.Value.Date && bugun <= p.IzinBitis.Value.Date)
+                        return false;
+                    var yetk = _yetkinlikler.FirstOrDefault(y => y.SicilNo == p.SicilNo && y.ParcaPN == parcaPN);
+                    if (yetk == null) return false;
+                    return (kapasiteTakip[p.Id] + gereklSure) <= NetVardiyaSuresi;
+                })
+                .OrderBy(p => kapasiteTakip[p.Id])           // en boş önce → yayma
+                .ThenByDescending(p =>
+                {
+                    var y = _yetkinlikler.FirstOrDefault(x => x.SicilNo == p.SicilNo && x.ParcaPN == parcaPN);
+                    return y?.YetkinlikSeviyesi ?? 0;
+                })
+                .ToList();
+
+            if (!uygunlar.Any()) continue;
+
+            var secilenP = uygunlar.First();
+            _vardiyaAtamalari[secilenP.Id].Add(is_);
+            kapasiteTakip[secilenP.Id] += gereklSure;
+        }
+    }
+
+    private void VardiyaIsKaldir(int personelId, BakimKontrolKaydi is_)
+    {
+        if (_vardiyaAtamalari.TryGetValue(personelId, out var liste))
+            liste.Remove(is_);
+    }
+
+    private void VardiyaModundanCik()
+    {
+        _vardiyaModu = false;
+        _vardiyaAtamalari.Clear();
+    }
+
+    private async Task VardiyaPlaniniOnayla()
+    {
+        int sayac = 0;
+        foreach (var (personelId, isler) in _vardiyaAtamalari)
+        {
+            foreach (var is_ in isler)
+            {
+                var kayit = _tumIsler.FirstOrDefault(x => x.Id == is_.Id);
+                if (kayit == null) continue;
+                kayit.AtananPersonelId = personelId;
+                kayit.Durum = nameof(BakimDurumu.DevamEdiyor);
+                kayit.IslemTarihi = await ZamanServisi.TahminiBitisHesaplaAsync(DateTime.UtcNow, 0);
+                kayit.EgitimModu = _egitimModu;
+                sayac++;
+            }
+        }
+
+        try
+        {
+            await Context.SaveChangesAsync();
+            Snackbar.Add($"Vardiya planı uygulandı — {sayac} iş atandı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Kayıt hatası: " + ex.Message, Severity.Error);
+            return;
+        }
+
+        VardiyaModundanCik();
+        await VerileriYukle();
+    }
+
+    private string AciliyetRenkKod(int puan) => puan >= 70 ? "#ef4444" : puan >= 40 ? "#facc15" : "#60a5fa";
+
+    // --- Tekil atama ---
+
+    private List<PersonelPuani> PersonelPuaniListesi()
+    {
+        return _tekAtamaPuanlari
+            .Where(x => string.IsNullOrWhiteSpace(_personelArama)
+                || x.Personel.AdSoyad.Contains(_personelArama, StringComparison.OrdinalIgnoreCase)
+                || x.Personel.SicilNo.Contains(_personelArama, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.UygunMu)
+            .ThenByDescending(x => x.UyumPuani)
+            .ThenBy(x => x.Personel.AdSoyad)
+            .ToList();
+    }
+
+    private void PersonelSecimiAc(BakimKontrolKaydi item)
+    {
+        _seciliKayit = item;
+        _personelArama = string.Empty;
+        _seciliOnIzlemePersonelId = 0;
+        _tekAtamaPuanlari = _seciliKayit != null ? UygunPersonelListesi(_seciliKayit) : new();
+        _secimAcik = true;
+    }
+
+    private void PersonelSecimiKapat() => _secimAcik = false;
+
+    private PersonelPuani? SecilenPuani =>
+        _seciliOnIzlemePersonelId > 0
+            ? _tekAtamaPuanlari.FirstOrDefault(x => x.Personel.Id == _seciliOnIzlemePersonelId)
+            : null;
+
+    private async Task AtaVeBaslat()
+    {
+        if (_seciliKayit == null || SecilenPuani == null) return;
+        var p = SecilenPuani.Personel;
+        try
+        {
+            var entry = Context.Entry(_seciliKayit);
+            if (entry.State == EntityState.Detached) Context.Attach(_seciliKayit);
+            _seciliKayit.AtananPersonelId = p.Id;
+            _seciliKayit.Durum = nameof(BakimDurumu.DevamEdiyor);
+            _seciliKayit.IslemTarihi = DateTime.UtcNow;
+            await Context.SaveChangesAsync();
+            Snackbar.Add($"{p.AdSoyad} göreve atandı.", Severity.Success);
+            PersonelSecimiKapat();
+            await VerileriYukle();
+        }
+        catch (Exception ex) { Snackbar.Add("Atama hatası: " + ex.Message, Severity.Error); }
+    }
+
+    private void IsBitir(BakimKontrolKaydi item)
+    {
+        _tamamlanacakKayit = item;
+        var gecenDk = (int)(DateTime.UtcNow - item.IslemTarihi).TotalMinutes;
+        // Makul aralık: 1 dk – 1440 dk (24 saat). Dışındaysa tahmini süreyi kullan.
+        _gercekSureDk = gecenDk >= 1 && gecenDk <= 1440
+            ? gecenDk
+            : item.ParcaSablonu?.IslemSure ?? 60;
+        _tamamlaDialogAcik = true;
+    }
+
+    private async Task IsBitirOnayla()
+    {
+        if (_tamamlanacakKayit == null) return;
+        var item = _tamamlanacakKayit;
+        _tamamlaDialogAcik = false;
+
+        try
+        {
+            item.Durum            = nameof(BakimDurumu.Tamamlandi);
+            item.TamamlanmaTarihi = DateTime.UtcNow;
+            item.GercekSureDk     = _gercekSureDk > 0 ? _gercekSureDk : null;
+            await Context.SaveChangesAsync();
+
+            // SV yetkinlik güncelleme
+            var personelId = item.AtananPersonelId ?? item.GelistirmePersonelId;
+            if (personelId.HasValue && item.ParcaSablonuId > 0)
+                await YetkinlikService.KartTamamlandiAsync(personelId.Value, item.ParcaSablonuId, item.Id);
+
+            // Plan otomatik tamamlanma kontrolü
+            var tumIsler = await Context.BakimKontrolKayitlari
+                .Where(k => k.BakimPlaniId == item.BakimPlaniId)
+                .ToListAsync();
+
+            if (tumIsler.Any() && tumIsler.All(k => k.Durum == nameof(BakimDurumu.Tamamlandi)))
+            {
+                var plan = await Context.BakimPlanlari.FindAsync(item.BakimPlaniId);
+                if (plan != null)
+                {
+                    plan.GenelDurum  = nameof(BakimDurumu.Tamamlandi);
+                    plan.TeslimTarihi = DateTime.UtcNow;
+                    await Context.SaveChangesAsync();
+                    Snackbar.Add($"Tüm işler tamamlandı! {plan.SeriNo} bakım planı kapatıldı.", Severity.Success);
+                }
+            }
+            else
+            {
+                Snackbar.Add($"İşlem tamamlandı. Gerçek süre: {_gercekSureDk} dk kaydedildi.", Severity.Success);
+            }
+
+            await VerileriYukle();
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task AtamayiKaldir(BakimKontrolKaydi item)
+    {
+        try
+        {
+            item.AtananPersonelId = null;
+            item.Durum = nameof(BakimDurumu.Beklemede);
+            item.IslemTarihi = DateTime.UtcNow;
+            await Context.SaveChangesAsync();
+            Snackbar.Add("Personel ataması kaldırıldı.", Severity.Warning);
+            await VerileriYukle();
+        }
+        catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
+    }
+
+    // --- Toplu Atama ---
+
+    private void TopluAtamaModunaGec()
+    {
+        _planAtamalari = _islerBekleyen.ToDictionary(x => x.Id, _ => (int?)null);
+
+        _planKapasitesi = new();
+        _egitimModu = false;
+        _topluAtamaModu = true;
+    }
+
+    private void TopluAtamaModundanCik()
+    {
+        _topluAtamaModu = false;
+        _planAtamalari.Clear();
+
+        _planKapasitesi.Clear();
+    }
+
+    private double KalanKapasite(int personelId) =>
+        NetVardiyaSuresi
+        - _kapasiteHaritasi.GetValueOrDefault(personelId)
+        - _planKapasitesi.GetValueOrDefault(personelId);
+
+    // İşlem türüne göre minimum yetkinlik seviyesi
+    // Kritik: SV3+ zorunlu  |  diğer (Rutin, Periyodik vb.): SV1+ (herhangi sertifika yeterli)
+    private static int MinYetkinlikSeviyesi(string? islemTuru) =>
+        (islemTuru ?? "").ToLower() == "kritik" ? 3 : 1;
+
+    private int AciliyetPuaniHesapla(BakimKontrolKaydi is_)
+    {
+        int puan = (is_.ParcaSablonu?.IslemTuru ?? "").ToLower() switch
+        {
+            "kritik"    => 60,
+            "rutin"     => 20,
+            "periyodik" => 15,
+            _           => 10
+        };
+        var gunFarki = (int)(DateTime.UtcNow - is_.IslemTarihi).TotalDays;
+        puan += Math.Min(gunFarki * 5, 50);
+        return Math.Min(puan, 110);
+    }
+
+    private List<PersonelPuani> UygunPersonelListesi(BakimKontrolKaydi is_)
+    {
+        var parcaPN = is_.ParcaSablonu?.ParcaPN ?? "";
+        var atolyeKodu = is_.ParcaSablonu?.BakimGrubu?.AtolyeKodu ?? "";
+        var islemTuru = is_.ParcaSablonu?.IslemTuru;
+        var gereklSure = (is_.ParcaSablonu?.IslemSure ?? 60) / 60.0;
+        var minSeviye = MinYetkinlikSeviyesi(islemTuru);
+        var bugun = DateTime.UtcNow.Date;
+
+        return _personeller.Select(p =>
+        {
+            if (p.Durum != "Aktif")
+                return new PersonelPuani(p, 0, false, "Aktif değil", 0);
+
+            if (p.IzinBaslangic.HasValue && p.IzinBitis.HasValue
+                && bugun >= p.IzinBaslangic.Value.Date && bugun <= p.IzinBitis.Value.Date)
+                return new PersonelPuani(p, 0, false, "İzinde", 0);
+
+            if (!string.IsNullOrEmpty(atolyeKodu) && !string.IsNullOrEmpty(p.AtolyeKodu)
+                && !p.AtolyeKodu.Trim().Equals(atolyeKodu.Trim(), StringComparison.OrdinalIgnoreCase))
+                return new PersonelPuani(p, 0, false, "Farklı atölye", 0);
+
+            var yetkinlik = _yetkinlikler.FirstOrDefault(y => y.SicilNo == p.SicilNo && y.ParcaPN == parcaPN);
+            if (yetkinlik == null)
+                return new PersonelPuani(p, 0, false, "Sertifika yok", 0);
+
+            if (yetkinlik.YetkinlikSeviyesi < minSeviye)
+                return new PersonelPuani(p, 0, false,
+                    $"SV yetersiz — {islemTuru} için min. SV{minSeviye} gerekli", yetkinlik.YetkinlikSeviyesi);
+
+            if (KalanKapasite(p.Id) < gereklSure)
+                return new PersonelPuani(p, 0, false, "Kapasitesi dolu", 0);
+
+            int puan = yetkinlik.YetkinlikSeviyesi switch { 5 => 60, 4 => 50, 3 => 40, 2 => 30, 1 => 20, _ => 10 };
+
+            if (!string.IsNullOrEmpty(atolyeKodu)
+                && p.AtolyeKodu?.Trim().Equals(atolyeKodu.Trim(), StringComparison.OrdinalIgnoreCase) == true)
+                puan += 30;
+
+            var aktifIs = GetPersonelAktifIsSayisi(p.Id);
+            puan += aktifIs == 0 ? 20 : aktifIs == 1 ? 10 : 0;
+
+            return new PersonelPuani(p, puan, true, null, yetkinlik.YetkinlikSeviyesi);
+        })
+        .OrderByDescending(x => x.UygunMu)
+        .ThenByDescending(x => x.UyumPuani)
+        .ToList();
+    }
+
+    private void PlanAtamayiGuncelle(int isId, int? yeniPersonelId)
+    {
+        var is_ = _islerBekleyen.FirstOrDefault(x => x.Id == isId);
+        var sure = (is_?.ParcaSablonu?.IslemSure ?? 60) / 60.0;
+
+        if (_planAtamalari.TryGetValue(isId, out var eskiId) && eskiId.HasValue)
+            _planKapasitesi[eskiId.Value] = Math.Max(0, _planKapasitesi.GetValueOrDefault(eskiId.Value) - sure);
+
+        _planAtamalari[isId] = yeniPersonelId;
+
+
+        if (yeniPersonelId.HasValue)
+        {
+            _planKapasitesi[yeniPersonelId.Value] = _planKapasitesi.GetValueOrDefault(yeniPersonelId.Value) + sure;
+        }
+    }
+
+    private void OtomatikDagit()
+    {
+        _planKapasitesi.Clear();
+        _planAtamalari = _islerBekleyen.ToDictionary(x => x.Id, _ => (int?)null);
+
+
+        foreach (var is_ in _islerBekleyen.OrderByDescending(x => AciliyetPuaniHesapla(x)))
+        {
+            var uygunlar = UygunPersonelListesi(is_).Where(x => x.UygunMu).ToList();
+            if (!uygunlar.Any()) continue;
+
+            var toplamSure = ((is_.ParcaSablonu?.IslemSure ?? 60) + (is_.ParcaSablonu?.HazirlikSuresi ?? 15)) / 60.0;
+            var enIyi = uygunlar.FirstOrDefault(x =>
+                (_planKapasitesi.GetValueOrDefault(x.Personel.Id) + toplamSure) <= NetVardiyaSuresi);
+            if (enIyi is null) continue;  // Hiçbir personele sığmıyor, pas geç
+
+            _planAtamalari[is_.Id] = enIyi.Personel.Id;
+            _planKapasitesi[enIyi.Personel.Id] = _planKapasitesi.GetValueOrDefault(enIyi.Personel.Id) + toplamSure;
+        }
+
+        Snackbar.Add("Otomatik dağılım tamamlandı.", Severity.Info);
+    }
+
+    private void PlanTemizle()
+    {
+        _planAtamalari = _islerBekleyen.ToDictionary(x => x.Id, _ => (int?)null);
+
+        _planKapasitesi.Clear();
+    }
+
+    private void PlanOnayGoster() => _onayDialogAcik = true;
+
+    private async Task PlanOnayla()
+    {
+        int sayac = 0;
+        foreach (var (isId, personelId) in _planAtamalari)
+        {
+            if (!personelId.HasValue) continue;
+            var kayit = _tumIsler.FirstOrDefault(x => x.Id == isId);
+            if (kayit == null) continue;
+
+            kayit.AtananPersonelId = personelId;
+            kayit.Durum = nameof(BakimDurumu.DevamEdiyor);
+            kayit.IslemTarihi = DateTime.UtcNow;
+            kayit.EgitimModu = _egitimModu;
+            sayac++;
+        }
+
+        try
+        {
+            await Context.SaveChangesAsync();
+            Snackbar.Add($"{sayac} iş başarıyla atandı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Kayıt hatası: " + ex.Message, Severity.Error);
+            return;
+        }
+
+        _onayDialogAcik = false;
+        _topluAtamaModu = false;
+        _planAtamalari.Clear();
+
+        _planKapasitesi.Clear();
+        await VerileriYukle();
+    }
+
+    private int RiskSkoru()
+    {
+        var atanmamis = _islerBekleyen.Count(x =>
+            !_planAtamalari.TryGetValue(x.Id, out var v) || !v.HasValue);
+
+        var dusukSeviye = _planAtamalari.Count(kv =>
+        {
+            if (!kv.Value.HasValue) return false;
+            var is_ = _islerBekleyen.FirstOrDefault(x => x.Id == kv.Key);
+            var p = _personeller.FirstOrDefault(x => x.Id == kv.Value.Value);
+            var yetk = _yetkinlikler.FirstOrDefault(y => y.SicilNo == p?.SicilNo && y.ParcaPN == is_?.ParcaSablonu?.ParcaPN);
+            return yetk?.YetkinlikSeviyesi <= 2;
+        });
+
+        return atanmamis * 15 + dusukSeviye * 10;
+    }
+
+    private List<Personel> PersonelKartlariListesi()
+    {
+        var atolye = _atolyeler.FirstOrDefault(a => a.Id == _seciliAtolyeId);
+        return _personeller
+            .Where(p => p.Durum == "Aktif" && p.AtolyeKodu == atolye?.AtolyeKodu)
+            .OrderBy(p => p.AdSoyad)
+            .ToList();
+    }
+
+    private string AciliyetRengi(int puan) => puan >= 70
+        ? "background: rgba(239,68,68,0.15); color: #ef4444;"
+        : puan >= 40
+            ? "background: rgba(250,204,21,0.12); color: #facc15;"
+            : "background: rgba(59,130,246,0.12); color: #60a5fa;";
+
+}

@@ -1,0 +1,239 @@
+@page "/"
+@using MroPlan.Models.Enums
+@using MroPlan.Data
+@using Microsoft.EntityFrameworkCore
+@inject IPersonelService PersonelService
+@inject IBakimService BakimService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<MudContainer MaxWidth="@MaxWidth.False">
+
+    @* === KPI CARDS === *@
+    <MudGrid Class="mb-8 stagger-children" Spacing="4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 kpi-card gradient-border">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container gold">
+                        <MudIcon Icon="@Icons.Material.Rounded.Groups" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge">GÜÇ</span>
+                </div>
+                <div class="kpi-value">@stats.Values.Sum()</div>
+                <div class="kpi-label mt-1">Toplam Personel</div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 kpi-card gradient-border">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container danger">
+                        <MudIcon Icon="@Icons.Material.Rounded.FlightTakeoff" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge" style="background: rgba(239, 68, 68, 0.08); color: #EF4444; border-color: rgba(239, 68, 68, 0.1);">HATTAT</span>
+                </div>
+                <div class="kpi-value">@_dashStats.AktifBakim</div>
+                <div class="kpi-label mt-1">Aktif Bakım</div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 kpi-card gradient-border">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container success">
+                        <MudIcon Icon="@Icons.Material.Rounded.TaskAlt" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge" style="background: rgba(34, 197, 94, 0.08); color: #22C55E; border-color: rgba(34, 197, 94, 0.1);">VERİM</span>
+                </div>
+                <div class="kpi-value">@_dashStats.TamamlananGorev</div>
+                <div class="kpi-label mt-1">Tamamlanan Görev</div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 kpi-card gradient-border">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container info">
+                        <MudIcon Icon="@Icons.Material.Rounded.HourglassTop" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge" style="background: rgba(59, 130, 246, 0.08); color: #3B82F6; border-color: rgba(59, 130, 246, 0.1);">LOJİSTİK</span>
+                </div>
+                <div class="kpi-value">@_dashStats.BekleyenIsEmri</div>
+                <div class="kpi-label mt-1">Bekleyen İş Emri</div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* === CHARTS SECTION === *@
+    <MudGrid Class="chart-container stagger-children" Spacing="4">
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-6" Style="min-height: 400px;">
+                <div class="section-header">
+                    <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Bakım Yoğunluk Grafiği</MudText>
+                </div>
+                <ApexCharts.ApexChart TItem="ChartData" Options="chartOptions">
+                    <ApexCharts.ApexPointSeries TItem="ChartData" Items="trendData" Name="İş Emri" SeriesType="ApexCharts.SeriesType.Area" XValue="@(e => e.Label)" YValue="@(e => e.Value)" Color="#FACC15" />
+                </ApexCharts.ApexChart>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-6" Style="min-height: 400px;">
+                <div class="section-header">
+                    <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Personel Durumu</MudText>
+                </div>
+                <ApexCharts.ApexChart TItem="ChartData" Options="pieOptions">
+                    <ApexCharts.ApexPointSeries TItem="ChartData" Items="pieData" Name="Personel" SeriesType="ApexCharts.SeriesType.Donut" XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
+                </ApexCharts.ApexChart>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* === ATOLYE DOLULUK ORANLARI === *@
+    @if (_kullanimlar.Any())
+    {
+        <MudGrid Class="mt-6 stagger-children" Spacing="4">
+            <MudItem xs="12">
+                <MudPaper Class="pa-6">
+                    <div class="section-header mb-4">
+                        <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Atölye Doluluk Oranları</MudText>
+                        <MudText Typo="Typo.caption" Style="color: #71717A;">
+                            Man-Hour / Anlık Kullanım Oranı &nbsp;·&nbsp; Kapasite = Personel × 480 dk × %%85
+                        </MudText>
+                    </div>
+                    <MudGrid Spacing="3" Justify="Justify.FlexStart">
+                        @foreach (var a in _kullanimlar)
+                        {
+                            <MudItem xs="6" sm="4" md="2">
+                                <div class="d-flex flex-column align-center pa-2">
+                                    <MudProgressCircular
+                                        Value="@Math.Min(a.Oran, 100)"
+                                        Size="Size.Large"
+                                        StrokeWidth="6"
+                                        Style="@($"color: {a.Renk};")" />
+                                    <MudText Typo="Typo.subtitle1" Style="@($"font-weight: 800; margin-top: 8px; color: {a.Renk};")">
+                                        %@(a.Oran.ToString("F0"))
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #A1A1AA; text-align: center;">
+                                        @a.Ad
+                                    </MudText>
+                                </div>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @* === RECENT ACTIVITY === *@
+    <MudGrid Class="mt-6 mb-8 stagger-children" Spacing="4">
+        <MudItem xs="12">
+            <MudPaper Class="pa-6">
+                <div class="section-header">
+                    <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Son Faaliyetler</MudText>
+                </div>
+                <MudTable Items="recentPlanlar" Hover="true" Elevation="0" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Kuyruk No</MudTh>
+                        <MudTh>Model</MudTh>
+                        <MudTh>Kabul Tarihi</MudTh>
+                        <MudTh>Durum</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd><span style="font-weight: 700; color: #FACC15;">@context.SeriNo</span></MudTd>
+                        <MudTd>@context.HeliTipi</MudTd>
+                        <MudTd Style="color: #A1A1AA;">@context.KabulTarihi.ToShortDateString()</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Color="@GetDurumColor(context.GenelDurumEnum)" Size="Size.Small" Variant="Variant.Filled">@context.GenelDurum</MudChip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private Dictionary<string, int> stats = new();
+    private List<BakimPlani> recentPlanlar = new();
+    private DashboardStats _dashStats = new(0, 0, 0, new());
+    private List<ChartData> trendData = new();
+    private List<ChartData> pieData = new();
+
+    private record AtolYeKullanimDto(string Ad, double Oran, string Renk, int ToplamPersonel);
+    private List<AtolYeKullanimDto> _kullanimlar = new();
+
+    private ApexCharts.ApexChartOptions<ChartData> chartOptions = new()
+    {
+        Chart = new() { Toolbar = new() { Show = false }, Background = "transparent" },
+        Theme = new() { Mode = ApexCharts.Mode.Dark },
+        Grid = new() { BorderColor = "#27272A" },
+        Stroke = new() { Curve = ApexCharts.Curve.Smooth, Width = 3 },
+        Fill = new() { Type = new List<ApexCharts.FillType> { ApexCharts.FillType.Gradient } }
+    };
+
+    private ApexCharts.ApexChartOptions<ChartData> pieOptions = new()
+    {
+        Chart = new() { Toolbar = new() { Show = false }, Background = "transparent" },
+        Theme = new() { Mode = ApexCharts.Mode.Dark },
+        Colors = new List<string> { "#FACC15", "#3B82F6", "#22C55E", "#EF4444", "#8B5CF6" },
+        Stroke = new() { Width = 2 },
+        Legend = new() { Position = ApexCharts.LegendPosition.Bottom }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        stats = await PersonelService.GetPersonelStatsAsync();
+        var planlar = await BakimService.GetBakimPlanlariAsync();
+        recentPlanlar = planlar.Take(5).ToList();
+        _dashStats = await BakimService.GetDashboardStatsAsync();
+        trendData = _dashStats.HaftalikTrend
+            .Select(t => new ChartData { Label = t.Gun, Value = t.Sayi })
+            .ToList();
+        pieData = stats.Select(x => new ChartData { Label = x.Key, Value = (decimal?)x.Value }).ToList();
+
+        await HesaplaKullanimOranlariAsync();
+    }
+
+    private async Task HesaplaKullanimOranlariAsync()
+    {
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+
+        var kayitlar = await ctx.BakimKontrolKayitlari
+            .Include(k => k.ParcaSablonu)
+            .Where(k => k.Durum == "DevamEdiyor")
+            .AsNoTracking()
+            .ToListAsync();
+
+        var personeller = await ctx.Personeller.AsNoTracking().ToListAsync();
+        var atolyeler  = await ctx.BakimGruplari.AsNoTracking().ToListAsync();
+
+        _kullanimlar = atolyeler
+            .Select(a =>
+            {
+                var isYuku = kayitlar
+                    .Where(k => k.ParcaSablonu?.BakimGrubuId == a.Id)
+                    .Sum(k => (k.ParcaSablonu?.IslemSure ?? 60) + (k.ParcaSablonu?.HazirlikSuresi ?? 15));
+
+                int aktif = personeller.Count(p =>
+                    p.BakimGrubuId == a.Id &&
+                    p.Durum == "Aktif" &&
+                    !(p.IzinBaslangic.HasValue && p.IzinBitis.HasValue &&
+                      DateTime.UtcNow.Date >= p.IzinBaslangic.Value.Date &&
+                      DateTime.UtcNow.Date <= p.IzinBitis.Value.Date));
+
+                double kapasite = aktif > 0 ? aktif * 480 * 0.85 : 480;
+                double oran = Math.Min(Math.Round(isYuku / kapasite * 100, 1), 150);
+                string renk = oran >= 100 ? "#ef4444" : oran >= 86 ? "#facc15" : oran >= 61 ? "#3b82f6" : "#22c55e";
+                return new AtolYeKullanimDto(a.GrupAdi, oran, renk, aktif);
+            })
+            .Where(x => x.ToplamPersonel > 0)
+            .ToList();
+    }
+
+    private Color GetDurumColor(BakimDurumu durum) => durum switch
+    {
+        BakimDurumu.Beklemede => Color.Info,
+        BakimDurumu.DevamEdiyor => Color.Warning,
+        BakimDurumu.Tamamlandi => Color.Success,
+        _ => Color.Default
+    };
+
+    public class ChartData { public string Label { get; set; } = ""; public decimal? Value { get; set; } }
+}

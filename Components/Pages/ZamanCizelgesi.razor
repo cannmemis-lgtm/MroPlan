@@ -1,0 +1,686 @@
+@page "/zaman-cizelgesi"
+@using MudBlazor
+@using MroPlan.Models
+@using MroPlan.Models.Enums
+@using MroPlan.Data
+@using Microsoft.EntityFrameworkCore
+@implements IAsyncDisposable
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject MroPlan.Services.ZamanYonetimServisi ZamanServisi
+
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-4 animate-fade-in pb-12">
+
+    @* ─── HEADER ─── *@
+    <div class="d-flex align-center justify-space-between mb-8">
+        <div>
+            <div class="d-flex align-center gap-3">
+                <div class="header-indicator"></div>
+                <MudText Typo="Typo.h4" Style="font-weight:900; letter-spacing:-1.5px; text-transform:uppercase; color:#FACC15;">Zaman Çizelgesi</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.45); font-weight:600; margin-left:24px;">
+                SON SENKRONİZASYON: @_sonGuncelleme.ToLocalTime().ToString("HH:mm:ss")
+            </MudText>
+        </div>
+
+    </div>
+
+    @* ─── ÖZET KARTLARI ─── *@
+    <MudGrid Spacing="4" Class="mb-8">
+        @{
+            var bekleyen   = _tumKayitlar.Count(k => k.Durum == nameof(BakimDurumu.Beklemede));
+            var devamEden  = _tumKayitlar.Count(k => k.Durum == nameof(BakimDurumu.DevamEdiyor));
+            var tamamlanan = _tumKayitlar.Count(k => k.Durum == nameof(BakimDurumu.Tamamlandi));
+        }
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-6 rounded-xxl cyber-card text-center">
+                <MudText Typo="Typo.h3" Style="font-weight:900; color:#facc15;">@bekleyen</MudText>
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:.05em;">BEKLEYEN İŞ</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-6 rounded-xxl cyber-card text-center">
+                <MudText Typo="Typo.h3" Style="font-weight:900; color:#38bdf8;">@devamEden</MudText>
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:.05em;">DEVAM EDEN İŞ</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-6 rounded-xxl cyber-card text-center">
+                <MudText Typo="Typo.h3" Style="font-weight:900; color:#4ade80;">@tamamlanan</MudText>
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:.05em;">TAMAMLANAN İŞ</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ─── GANTT (ApexCharts RangeBar) & KONTROLLER ─── *@
+    <MudPaper Class="pa-6 rounded-xxl cyber-card mb-6">
+        @* Header & View Mode *@
+        <div class="d-flex align-center justify-space-between mb-6">
+            <div class="d-flex align-center gap-3">
+                <MudIcon Icon="@Icons.Material.Filled.Timeline" Color="Color.Primary" Size="Size.Medium" />
+                <MudText Typo="Typo.h5" Style="font-weight:900; letter-spacing:-0.5px;">OPERASYONEL ZAMAN ÇİZELGESİ</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                         Style="font-weight:700; color:rgba(255,255,255,0.4);">
+                    @_planlananDatum.Count GRUP
+                </MudChip>
+            </div>
+            <div class="d-flex align-center gap-4">
+                <div class="view-mode-selector p-1 rounded-xl">
+                    <MudButtonGroup Variant="Variant.Text" Size="Size.Medium">
+                        <MudButton OnClick='async () => await ChangeMode("Arac")'
+                                   Class='@(GoruntuleModu == "Arac" ? "active-mode" : "inactive-mode")'>
+                            <MudIcon Icon="@Icons.Material.Filled.Flight" Size="Size.Small" Class="mr-2" />HAVA ARACI
+                        </MudButton>
+                        <MudButton OnClick='async () => await ChangeMode("Atolye")'
+                                   Class='@(GoruntuleModu == "Atolye" ? "active-mode" : "inactive-mode")'>
+                            <MudIcon Icon="@Icons.Material.Filled.Build" Size="Size.Small" Class="mr-2" />ATÖLYE
+                        </MudButton>
+                        <MudButton OnClick='async () => await ChangeMode("Personel")'
+                                   Class='@(GoruntuleModu == "Personel" ? "active-mode" : "inactive-mode")'>
+                            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-2" />PERSONEL
+                        </MudButton>
+                    </MudButtonGroup>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" Variant="Variant.Filled"
+                               Size="Size.Medium" OnClick="VeriYukle"
+                               Style="border-radius:12px; box-shadow:0 0 15px rgba(250,204,21,0.2);" />
+            </div>
+        </div>
+
+        @* Gantt Filtre & Zoom & Legend *@
+        <div class="d-flex align-center gap-6 flex-wrap mb-6 pb-4 border-b border-solid" style="border-color: rgba(255,255,255,0.05); overflow: visible;">
+            @* Zoom *@
+            <div class="d-flex align-center gap-2">
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">ZOOM</MudText>
+                <div class="view-mode-selector p-1 rounded-lg">
+                    <MudButtonGroup Variant="Variant.Text" Size="Size.Small">
+                        @foreach (var z in new[] { ("7G", 7), ("30G", 30), ("90G", 90), ("Tümü", 0) })
+                        {
+                            var zz = z;
+                            <MudButton OnClick="@(async () => await SetZoom(zz.Item2))"
+                                       Class='@(_zoomGun == zz.Item2 ? "active-mode" : "inactive-mode")'
+                                       Style="min-width:50px; font-size:0.7rem; font-weight:900;">
+                                @zz.Item1
+                            </MudButton>
+                        }
+                    </MudButtonGroup>
+                </div>
+            </div>
+
+            @* Tarih aralığı *@
+            <div class="d-flex align-center gap-3">
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">ARALIK</MudText>
+                <MudDatePicker Date="_filtreBas" DateChanged="@(async d => { _filtreBas = d; _zoomGun = -1; await HesaplaGanttAsync(); })"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               DateFormat="dd.MM.yyyy" Placeholder="Başlangıç"
+                               Style="width:160px;" PickerVariant="PickerVariant.Inline"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" />
+                <MudText Style="color:rgba(255,255,255,0.3);">—</MudText>
+                <MudDatePicker Date="_filtreBit" DateChanged="@(async d => { _filtreBit = d; _zoomGun = -1; await HesaplaGanttAsync(); })"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               DateFormat="dd.MM.yyyy" Placeholder="Bitiş"
+                               Style="width:160px;" PickerVariant="PickerVariant.Inline"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" />
+                @if (_filtreBas.HasValue || _filtreBit.HasValue)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Clear" Size="Size.Small"
+                                   OnClick="@(async () => { _filtreBas = null; _filtreBit = null; await SetZoom(0); })"
+                                   Style="color:rgba(255,255,255,0.4);" />
+                }
+            </div>
+
+            <div class="flex-1"></div>
+
+            @* Legand *@
+            <div class="d-flex gap-4 flex-wrap">
+                <div class="d-flex align-center gap-2">
+                    <div class="legend-dot" style="background:#3b82f6;"></div>
+                    <MudText Typo="Typo.caption" Style="font-weight:700;">PLANLANAN</MudText>
+                </div>
+                <div class="d-flex align-center gap-2">
+                    <div class="legend-dot" style="background:#22c55e;"></div>
+                    <MudText Typo="Typo.caption" Style="font-weight:700;">GERÇEKLEŞEN</MudText>
+                </div>
+                <div class="d-flex align-center gap-2">
+                    <div class="legend-dot" style="background:#facc15; opacity:0.7;"></div>
+                    <MudText Typo="Typo.caption" Style="font-weight:700;">PROJEKSİYON</MudText>
+                </div>
+                <div class="d-flex align-center gap-2">
+                    <div style="width:2px; height:12px; background:#ef4444; border-radius:2px;"></div>
+                    <MudText Typo="Typo.caption" Style="font-weight:700;">TATİL</MudText>
+                </div>
+            </div>
+        </div>
+
+        @if (!_tumKayitlar.Any())
+        {
+            <div class="d-flex flex-column align-center justify-center" style="height:200px; opacity:0.2;">
+                <MudIcon Icon="@Icons.Material.Filled.DataExploration" Size="Size.Large" Style="font-size:5rem;" />
+                <MudText Typo="Typo.h6" Style="font-weight:800;">VERİ YOK</MudText>
+            </div>
+        }
+        else
+        {
+            <ApexCharts.ApexChart TItem="GanttDatum" Options="_ganttOptions" @ref="_ganttChart"
+                                  @key="_chartKey"
+                                  Height="@_chartHeight"
+                                  XAxisType="ApexCharts.XAxisType.Datetime">
+                <ApexCharts.ApexRangeSeries TItem="GanttDatum"
+                    Items="_planlananDatum" Name="Planlanan"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => (decimal)e.Bas)"
+                    YMaxValue="@(e => (decimal)e.Bit)" />
+                <ApexCharts.ApexRangeSeries TItem="GanttDatum"
+                    Items="_gerceklesenDatum" Name="Gerçekleşen"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => (decimal)e.Bas)"
+                    YMaxValue="@(e => (decimal)e.Bit)" />
+                <ApexCharts.ApexRangeSeries TItem="GanttDatum"
+                    Items="_projeksiyonDatum" Name="Projeksiyon"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => (decimal)e.Bas)"
+                    YMaxValue="@(e => (decimal)e.Bit)" />
+            </ApexCharts.ApexChart>
+        }
+    </MudPaper>
+
+    @* ─── UYARI PANELİ ─── *@
+    @if (_uyarilar.Any())
+    {
+        <MudPaper Class="pa-6 rounded-xxl cyber-card" Style="border: 1px solid rgba(250,204,21,0.3) !important;">
+            <div class="d-flex align-center gap-4 mb-4">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Medium" />
+                <MudText Typo="Typo.h6" Style="font-weight:900;">KRİTİK UYARILAR</MudText>
+                <div class="flex-1"></div>
+                <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small" Style="font-weight:900;">@_uyarilar.Count AKTİF</MudChip>
+            </div>
+            <div class="d-flex flex-column gap-3">
+                @foreach (var u in _uyarilar.OrderByDescending(x => (int)x.Seviye))
+                {
+                    <div class="d-flex align-center gap-4 pa-4 rounded-xl"
+                         style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05);">
+                        <div style="width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+                             background:@(u.Seviye == UyariSeviye.Kritik ? "rgba(239,68,68,0.15)" : "rgba(250,204,21,0.15)");">
+                            <MudIcon Icon="@UyariIkon(u.Turu)" Color="@UyariRengi(u.Seviye)" Size="Size.Small" />
+                        </div>
+                        <div class="flex-1">
+                            <MudText Typo="Typo.body1" Style="font-weight:800;">@u.Baslik</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:600;">@u.Aciklama</MudText>
+                        </div>
+                        <MudChip T="string" Size="Size.Small" Color="@UyariRengi(u.Seviye)" Variant="Variant.Text" Style="font-weight:900;">
+                            @u.Turu.ToString().ToUpper()
+                        </MudChip>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+    }
+
+</MudContainer>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.8s cubic-bezier(0.4,0,0.2,1); }
+    @@keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    .header-indicator { width:8px; height:32px; background:#FACC15; border-radius:4px; box-shadow:0 0 15px #FACC15; }
+    .view-mode-selector { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); }
+    .active-mode   { background:#FACC15 !important; color:black !important; font-weight:900 !important; border-radius:10px !important; }
+    .inactive-mode { color:rgba(255,255,255,0.5) !important; font-weight:700 !important; }
+    .cyber-card {
+        background:rgba(15,20,25,0.6) !important; backdrop-filter:blur(12px);
+        border:1px solid rgba(255,255,255,0.05) !important;
+        box-shadow:0 20px 40px rgba(0,0,0,0.4) !important;
+    }
+    .cyber-card:hover { border-color:rgba(250,204,21,0.2) !important; }
+    .legend-dot { width:12px; height:12px; border-radius:3px; }
+    /* ApexCharts dark uyumu */
+    .apexcharts-canvas { background: transparent !important; }
+    .apexcharts-tooltip { background: rgba(10,15,25,0.95) !important; border: 1px solid rgba(250,204,21,0.3) !important; border-radius: 10px !important; }
+    .apexcharts-tooltip-title { background: rgba(250,204,21,0.1) !important; font-weight: 900 !important; }
+</style>
+
+@code {
+    private string GoruntuleModu { get; set; } = "Arac";
+    private List<BakimKontrolKaydi> _tumKayitlar = new();
+    private List<GanttDatum> _planlananDatum    = new();
+    private List<GanttDatum> _gerceklesenDatum  = new();
+    private List<GanttDatum> _projeksiyonDatum  = new();
+    private List<UyariItem>  _uyarilar          = new();
+    private List<Personel>   _tumPersoneller    = new();
+    private DateTime _sonGuncelleme = DateTime.UtcNow;
+    private PeriodicTimer? _timer;
+    private ApexCharts.ApexChart<GanttDatum>? _ganttChart;
+    private int _chartHeight = 350;
+    private int _chartKey = 0;
+
+    // Filtre
+    private int       _zoomGun   = 0;
+    private DateTime? _filtreBas = null;
+    private DateTime? _filtreBit = null;
+
+    private record GanttDatum(string Grup, long Bas, long Bit, int IscilikDk = 0, int HazirlikDk = 0);
+
+    private ApexCharts.ApexChartOptions<GanttDatum> _ganttOptions = BuildOptions();
+
+    private static ApexCharts.ApexChartOptions<GanttDatum> BuildOptions() => new()
+    {
+        Chart = new()
+        {
+            Type = ApexCharts.ChartType.RangeBar,
+            Background = "transparent",
+            ForeColor  = "#94a3b8",
+            Animations = new()
+            {
+                Enabled          = true,
+                Speed            = 900,
+                AnimateGradually = new() { Enabled = true, Delay = 120 }
+            },
+            Toolbar = new()
+            {
+                Show  = true,
+                Tools = new() { Zoom = true, Pan = true, Reset = true, Download = false }
+            }
+        },
+        Theme  = new() { Mode = ApexCharts.Mode.Dark },
+        Colors = new List<string> { "#3b82f6", "#22c55e", "#facc15" },
+        PlotOptions = new()
+        {
+            Bar = new()
+            {
+                Horizontal        = true,
+                BarHeight         = "40%",
+                RangeBarGroupRows = false
+            }
+        },
+        Grid = new()
+        {
+            BorderColor = "rgba(255,255,255,0.05)",
+            Row = new() { Colors = new List<string> { "rgba(255,255,255,0.01)", "transparent" }, Opacity = 1 }
+        },
+        Tooltip = new()
+        {
+            Theme = ApexCharts.Mode.Dark,
+            X     = new() { Format = "dd.MM.yyyy HH:mm" }
+        },
+        Legend = new()
+        {
+            Position    = ApexCharts.LegendPosition.Top,
+            Labels      = new() { Colors = "#e2e8f0" },
+            FontWeight  = "700",
+            ItemMargin  = new() { Horizontal = 12 }
+        },
+        DataLabels = new() { Enabled = false }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VeriYukle();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        _ = OtomatikYenile();
+    }
+
+    private async Task OtomatikYenile()
+    {
+        while (_timer != null && await _timer.WaitForNextTickAsync())
+        {
+            await VeriYukle();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task VeriYukle()
+    {
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        _tumKayitlar = await ctx.BakimKontrolKayitlari
+            .Include(k => k.BakimPlani)
+            .Include(k => k.ParcaSablonu).ThenInclude(s => s!.BakimGrubu)
+            .Include(k => k.AtananPersonel)
+            .AsNoTracking()
+            .ToListAsync();
+
+        _tumPersoneller = await ctx.Personeller.AsNoTracking().ToListAsync();
+
+        await HesaplaGanttAsync();
+        _uyarilar = HesaplaUyarilar();
+        _sonGuncelleme = DateTime.UtcNow;
+    }
+
+    private async Task ChangeMode(string mode) { GoruntuleModu = mode; await HesaplaGanttAsync(); _chartKey++; }
+
+    private async Task SetZoom(int gun)
+    {
+        _zoomGun   = gun;
+        _filtreBas = null;
+        _filtreBit = null;
+        await HesaplaGanttAsync();
+        _chartKey++;
+    }
+
+    private static long ToMs(DateTime dt) =>
+        new DateTimeOffset(dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime())
+            .ToUnixTimeMilliseconds();
+
+    // Türkiye resmi tatilleri (fallback)
+    private static readonly HashSet<string> _tatilListesi = new()
+    {
+        "2025-01-01","2025-04-23","2025-05-01","2025-05-19",
+        "2025-06-06","2025-06-07","2025-06-08","2025-06-09",
+        "2025-07-15","2025-08-30","2025-10-29",
+        "2026-01-01","2026-04-23","2026-05-01","2026-05-19",
+        "2026-05-26","2026-05-27","2026-05-28","2026-05-29",
+        "2026-07-15","2026-08-30","2026-10-29",
+        "2027-01-01","2027-04-23","2027-05-01","2027-05-19",
+        "2027-07-15","2027-08-30","2027-10-29",
+    };
+
+    private async Task HesaplaGanttAsync()
+    {
+        _planlananDatum   = new();
+        _gerceklesenDatum = new();
+        _projeksiyonDatum = new();
+
+        if (!_tumKayitlar.Any()) return;
+
+        var bugun = DateTime.UtcNow;
+
+        // ── Zaman penceresi ──────────────────────────────────────────────
+        DateTime pencereBas, pencereBit;
+        if (_filtreBas.HasValue || _filtreBit.HasValue)
+        {
+            pencereBas = (_filtreBas ?? bugun.AddDays(-30)).ToUniversalTime();
+            pencereBit = (_filtreBit ?? bugun.AddDays(30)).ToUniversalTime().AddDays(1);
+        }
+        else if (_zoomGun > 0)
+        {
+            pencereBas = bugun.Date.AddDays(-_zoomGun / 2.0);
+            pencereBit = bugun.Date.AddDays(_zoomGun / 2.0 + 1);
+        }
+        else
+        {
+            var tumTarihler = _tumKayitlar
+                .SelectMany(k => new DateTime?[] {
+                    k.IslemTarihi > DateTime.MinValue ? k.IslemTarihi : null,
+                    k.TamamlanmaTarihi,
+                    k.BakimPlani?.KabulTarihi
+                })
+                .Where(d => d.HasValue && d.Value > DateTime.MinValue)
+                .Select(d => d!.Value).ToList();
+
+            if (!tumTarihler.Any()) return;
+
+            var projMax = _tumKayitlar
+                .Where(k => k.Durum == nameof(BakimDurumu.Beklemede) && k.BakimPlani?.KabulTarihi != null)
+                .Select(k => k.BakimPlani!.KabulTarihi.AddMinutes(k.ParcaSablonu?.IslemSure ?? 60))
+                .DefaultIfEmpty(DateTime.MinValue).Max();
+
+            pencereBas = tumTarihler.Min().AddHours(-4);
+            pencereBit = new[] { tumTarihler.Max(), projMax, bugun }.Max().AddHours(4);
+        }
+
+        // ── Annotations: BUGÜN + TATİLLER ───────────────────────────────
+        var annotations = new List<ApexCharts.AnnotationsXAxis>
+        {
+            new()
+            {
+                X               = (decimal)ToMs(bugun),
+                BorderColor     = "#facc15",
+                BorderWidth     = 2,
+                StrokeDashArray = 5,
+                Label = new()
+                {
+                    Text            = "BUGÜN",
+                    OffsetY         = 0,
+                    Style = new()
+                    {
+                        Color      = "#000",
+                        Background = "#facc15",
+                        FontWeight = "900",
+                        FontSize   = "11px",
+                        Padding    = new() { Top = 4, Bottom = 4, Left = 6, Right = 6 }
+                    }
+                }
+            }
+        };
+
+        // Hafta sonları → gri band + resmi tatiller → kırmızı çizgi
+        for (var gun = pencereBas.Date; gun <= pencereBit.Date; gun = gun.AddDays(1))
+        {
+            var gunUtc = DateTime.SpecifyKind(gun, DateTimeKind.Local).ToUniversalTime();
+
+            // Cumartesi: Cmt → Pzt arası gri band (etiket yok, band yeterli)
+            if (gun.DayOfWeek == DayOfWeek.Saturday)
+            {
+                var bandBit = gun.AddDays(2);
+                annotations.Add(new()
+                {
+                    X           = (decimal)ToMs(gunUtc),
+                    X2          = (decimal)ToMs(DateTime.SpecifyKind(bandBit, DateTimeKind.Local).ToUniversalTime()),
+                    FillColor   = "rgba(255,255,255,0.05)",
+                    BorderColor = "transparent",
+                    BorderWidth = 0
+                });
+            }
+
+            // Resmi tatil → turuncu dolgulu band + etiket
+            if (_tatilListesi.Contains(gun.ToString("yyyy-MM-dd")))
+            {
+                var tatilBit = gun.AddDays(1);
+                annotations.Add(new()
+                {
+                    X           = (decimal)ToMs(gunUtc),
+                    X2          = (decimal)ToMs(DateTime.SpecifyKind(tatilBit, DateTimeKind.Local).ToUniversalTime()),
+                    FillColor   = "rgba(251,146,60,0.18)",
+                    BorderColor = "#fb923c",
+                    BorderWidth = 3,
+                    Label = new()
+                    {
+                        Text    = gun.ToString("dd.MM"),
+                        OffsetY = 0,
+                        Style   = new()
+                        {
+                            Color      = "#fff",
+                            Background = "#ea580c",
+                            FontSize   = "10px",
+                            FontWeight = "700",
+                            Padding    = new() { Top = 3, Bottom = 3, Left = 5, Right = 5 }
+                        }
+                    }
+                });
+            }
+        }
+
+        _ganttOptions.Annotations = new() { Xaxis = annotations };
+
+        // ── Veri grupları ────────────────────────────────────────────────
+        {
+            IEnumerable<IGrouping<string, BakimKontrolKaydi>> gruplar = GoruntuleModu switch
+            {
+                "Arac"   => _tumKayitlar.GroupBy(k => k.BakimPlani?.SeriNo ?? "Bilinmiyor"),
+                "Atolye" => _tumKayitlar.GroupBy(k => k.ParcaSablonu?.BakimGrubu?.GrupAdi ?? "Genel"),
+                _        => _tumKayitlar
+                                .Where(k => k.AtananPersonelId.HasValue)
+                                .GroupBy(k => k.AtananPersonel?.AdSoyad ?? "Atanmamış")
+            };
+
+            var grupListe = gruplar.ToList();
+
+            foreach (var g in grupListe)
+            {
+                var isler = g.ToList();
+                var grup  = g.Key;
+
+                // Planlanan bar — moda göre farklı hesap
+                {
+                    var iscilikDk  = isler.Sum(k => k.ParcaSablonu?.IslemSure     ?? 60);
+                    var hazirlikDk = isler.Sum(k => k.ParcaSablonu?.HazirlikSuresi ?? 15);
+                    DateTime? planBas = null;
+                    DateTime? planBit = null;
+
+                    if (GoruntuleModu == "Arac")
+                    {
+                        // Uçak: KabulTarihi → HedefTeslimTarihi (OtomatikHesapla'dan gelen orijinal plan)
+                        var kbList = isler
+                            .Where(k => k.BakimPlani?.KabulTarihi > DateTime.MinValue)
+                            .Select(k => k.BakimPlani!.KabulTarihi).ToList();
+                        if (kbList.Any())
+                        {
+                            planBas = kbList.Min();
+                            var hedefTeslim = isler
+                                .Select(k => k.BakimPlani?.HedefTeslimTarihi)
+                                .Where(d => d.HasValue && d.Value > DateTime.MinValue)
+                                .Select(d => d!.Value)
+                                .DefaultIfEmpty(DateTime.MinValue).Max();
+                            planBit = hedefTeslim > DateTime.MinValue
+                                ? hedefTeslim
+                                : await ZamanServisi.TahminiBitisHesaplaAsync(planBas.Value, iscilikDk + hazirlikDk);
+                        }
+                    }
+                    else if (GoruntuleModu == "Atolye")
+                    {
+                        // Atölye: KabulTarihi → atölyenin toplam işi (iş günü bazlı)
+                        var kbList = isler
+                            .Where(k => k.BakimPlani?.KabulTarihi > DateTime.MinValue)
+                            .Select(k => k.BakimPlani!.KabulTarihi).ToList();
+                        if (kbList.Any())
+                        {
+                            planBas = kbList.Min();
+                            planBit = await ZamanServisi.TahminiBitisHesaplaAsync(planBas.Value, iscilikDk + hazirlikDk);
+                        }
+                    }
+                    else // Personel
+                    {
+                        // Personel: IslemTarihi → o kişinin toplam işi (iş günü bazlı)
+                        var atananlar = isler.Where(k => k.IslemTarihi > DateTime.MinValue).ToList();
+                        if (atananlar.Any())
+                        {
+                            planBas = atananlar.Min(k => k.IslemTarihi);
+                            planBit = await ZamanServisi.TahminiBitisHesaplaAsync(planBas.Value, iscilikDk + hazirlikDk);
+                        }
+                    }
+
+                    if (planBas.HasValue && planBit.HasValue)
+                        _planlananDatum.Add(new(grup, ToMs(planBas.Value), ToMs(planBit.Value), iscilikDk, hazirlikDk));
+                }
+
+                var tamamlananlar = isler
+                    .Where(k => k.TamamlanmaTarihi.HasValue && k.IslemTarihi > DateTime.MinValue)
+                    .ToList();
+                if (tamamlananlar.Any())
+                    _gerceklesenDatum.Add(new(grup,
+                        ToMs(tamamlananlar.Min(k => k.IslemTarihi)),
+                        ToMs(tamamlananlar.Max(k => k.TamamlanmaTarihi!.Value))));
+
+                // Projeksiyon: bugünden itibaren kalan işler ne zaman biter?
+                // Hava Aracı → Beklemede + DevamEdiyor (uçağa ait tüm kalan iş)
+                // Atölye / Personel → yalnızca DevamEdiyor (aktif/atanmış işler)
+                var kalanlar = GoruntuleModu == "Arac"
+                    ? isler.Where(k => k.Durum == nameof(BakimDurumu.Beklemede) || k.Durum == nameof(BakimDurumu.DevamEdiyor)).ToList()
+                    : isler.Where(k => k.Durum == nameof(BakimDurumu.DevamEdiyor)).ToList();
+
+                if (kalanlar.Any())
+                {
+                    var projDk  = kalanlar.Sum(k => (k.ParcaSablonu?.IslemSure ?? 60) + (k.ParcaSablonu?.HazirlikSuresi ?? 15));
+                    var projBit = await ZamanServisi.TahminiBitisHesaplaAsync(bugun, projDk);
+                    _projeksiyonDatum.Add(new(grup, ToMs(bugun), ToMs(projBit)));
+                }
+            }
+
+            _chartHeight = Math.Max(300, grupListe.Count * 80 + 140);
+        }
+    }
+
+    private List<UyariItem> HesaplaUyarilar()
+    {
+        var liste = new List<UyariItem>();
+
+        var atanmamis = _tumKayitlar.Count(k =>
+            k.Durum == nameof(BakimDurumu.Beklemede) && !k.AtananPersonelId.HasValue);
+        if (atanmamis > 0)
+            liste.Add(new(UyariTuru.Atanmamis, UyariSeviye.Uyari,
+                $"{atanmamis} İŞ EMRİ ATANMAMIŞ",
+                "Beklemede olan ve personel atanmamış iş emirleri var."));
+
+        var cakismalar = _tumKayitlar
+            .Where(k => k.Durum == nameof(BakimDurumu.DevamEdiyor) && k.AtananPersonelId.HasValue)
+            .GroupBy(k => k.AtananPersonelId)
+            .Where(g => g.Count() > 1);
+        foreach (var g in cakismalar)
+            liste.Add(new(UyariTuru.Cakisma, UyariSeviye.Kritik,
+                $"{g.First().AtananPersonel?.AdSoyad} — EŞ ZAMANLI ÇAKIŞMA",
+                $"Aynı personele {g.Count()} iş eş zamanlı devam ediyor."));
+
+        foreach (var k in _tumKayitlar.Where(k =>
+            k.Durum == nameof(BakimDurumu.Beklemede) && k.AtananPersonelId == null))
+        {
+            if ((DateTime.UtcNow - k.IslemTarihi).TotalHours >= 48)
+                liste.Add(new(UyariTuru.UzunBekleme, UyariSeviye.Uyari,
+                    $"{k.ParcaSablonu?.ParcaAdi} — UZUN BEKLEME",
+                    $"{(DateTime.UtcNow - k.IslemTarihi).TotalHours:F0} saattir bekliyor."));
+        }
+
+        // Man-Hour / Finite Loading tabanlı kapasite uyarısı
+        var atolyeGruplari = _tumKayitlar
+            .Where(k => k.Durum == nameof(BakimDurumu.DevamEdiyor))
+            .GroupBy(k => k.ParcaSablonu?.BakimGrubu);
+
+        foreach (var grup in atolyeGruplari)
+        {
+            var grupAdi = grup.Key?.GrupAdi ?? "Genel";
+
+            // 1. İş Yükü (Adam-Dakika): İşlem Süresi + Hazırlık Süresi
+            var toplamIsYukuDk = grup.Sum(k =>
+                (k.ParcaSablonu?.IslemSure ?? 60) + (k.ParcaSablonu?.HazirlikSuresi ?? 15));
+
+            // 2. Aktif & İzinsiz Personel Kapasitesi
+            int aktifPersonel = _tumPersoneller.Count(p =>
+                p.BakimGrubuId == grup.Key?.Id &&
+                p.Durum == "Aktif" &&
+                !(p.IzinBaslangic.HasValue && p.IzinBitis.HasValue &&
+                  DateTime.UtcNow.Date >= p.IzinBaslangic.Value.Date &&
+                  DateTime.UtcNow.Date <= p.IzinBitis.Value.Date));
+
+            // 8 saat (480 dk) vardiya * %85 verimlilik çarpanı
+            double aktifKapasiteDk = aktifPersonel > 0 ? aktifPersonel * 480 * 0.85 : 480;
+
+            // 3. Kullanım Oranı (Utilization Rate)
+            double kullanimOrani = toplamIsYukuDk / aktifKapasiteDk * 100;
+
+            if (kullanimOrani >= 100)
+                liste.Add(new(UyariTuru.KapasiteAsimi, UyariSeviye.Kritik,
+                    $"{grupAdi} — DARBOĞAZ OLUŞTU (%{kullanimOrani:F0})",
+                    $"İş yükü ({toplamIsYukuDk} dk), personel kapasitesini ({aktifKapasiteDk:F0} dk) aştı!"));
+            else if (kullanimOrani >= 85)
+                liste.Add(new(UyariTuru.KapasiteAsimi, UyariSeviye.Uyari,
+                    $"{grupAdi} — KAPASİTE SINIRDA (%{kullanimOrani:F0})",
+                    $"İş yükü sınırda. Ani (Non-Routine) işler gelirse darboğaz yaşanabilir."));
+        }
+
+        return liste;
+    }
+
+    private Color UyariRengi(UyariSeviye s) => s switch
+    {
+        UyariSeviye.Kritik => Color.Error,
+        UyariSeviye.Uyari  => Color.Warning,
+        _                   => Color.Info
+    };
+
+    private string UyariIkon(UyariTuru t) => t switch
+    {
+        UyariTuru.SureAsimi     => Icons.Material.Filled.Timer,
+        UyariTuru.Atanmamis     => Icons.Material.Filled.PersonOff,
+        UyariTuru.Cakisma       => Icons.Material.Filled.ErrorOutline,
+        UyariTuru.KapasiteAsimi => Icons.Material.Filled.Warning,
+        UyariTuru.UzunBekleme   => Icons.Material.Filled.AccessTime,
+        _                        => Icons.Material.Filled.Info
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        await Task.CompletedTask;
+    }
+
+    private enum UyariTuru    { SureAsimi, Atanmamis, Cakisma, KapasiteAsimi, UzunBekleme }
+    private enum UyariSeviye  { Kritik = 3, Uyari = 2, Bilgi = 1 }
+    private record UyariItem(UyariTuru Turu, UyariSeviye Seviye, string Baslik, string Aciklama);
+}

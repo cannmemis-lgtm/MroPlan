@@ -1,0 +1,432 @@
+@page "/bakim-kabul"
+@using MudBlazor
+@using MroPlan.Models
+@using MroPlan.Models.Enums
+@using MroPlan.Services
+@inject IBakimService BakimService
+@inject IPersonelService PersonelService
+@inject MroPlan.Services.ZamanYonetimServisi ZamanServisi
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-4 animate-fade-in">
+
+    <div class="d-flex align-center justify-space-between mb-8">
+        <div>
+            <div class="d-flex align-center gap-3">
+                <div class="header-indicator"></div>
+                <MudText Typo="Typo.h4" Style="font-weight:900; letter-spacing:-1.5px; text-transform:uppercase; color:#FACC15;">Hava Aracı Kabulü</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.45); font-weight:600; margin-left:24px;">
+                Sisteme yeni hava aracı girişi yapın ve planlanan teslim tarihini belirleyin.
+            </MudText>
+        </div>
+    </div>
+
+    <MudGrid Spacing="6">
+
+        @* ─── KABUL FORMU ─── *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-8 rounded-xxl cyber-card">
+                <MudText Typo="Typo.h6" Class="mb-6" Style="font-weight:900; letter-spacing:-0.5px;">
+                    @(_isEdit ? "Kaydı Düzenle" : "Yeni Kabul")
+                </MudText>
+
+                <div class="d-flex flex-column gap-4">
+                    <MudTextField @bind-Value="_yeniPlan.SeriNo" Label="Seri Numarası"
+                                  Variant="Variant.Outlined" />
+
+                    <MudSelect T="string" Label="Helikopter Tipi"
+                               Value="_yeniPlan.HeliTipi"
+                               ValueChanged="@(async (string tip) => { _yeniPlan.HeliTipi = tip; await OtomatikHesapla(); })"
+                               Disabled="@_hesaplaniyor"
+                               Variant="Variant.Outlined">
+                        @foreach (var tip in HeliTipleri.Hepsi)
+                        {
+                            <MudSelectItem Value="@tip" />
+                        }
+                    </MudSelect>
+
+                    <MudSelect T="string" Label="Geldiği Birlik / Komutanlık" @bind-Value="_yeniPlan.GeldigiBirlik"
+                               Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("Deniz Havacılık K.")" />
+                        <MudSelectItem Value="@("Emniyet Hav. D.")" />
+                        <MudSelectItem Value="@("Jandarma Hav. K.")" />
+                        <MudSelectItem Value="@("Kara Havacılık K.")" />
+                        <MudSelectItem Value="@("Özel Kuvvetler")" />
+                    </MudSelect>
+
+                    @* ─── HEDEF TESLİM TARİHİ ─── *@
+                    <MudDivider Class="my-1" />
+                    <div>
+                        <MudText Typo="Typo.caption" Class="mb-2" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em;">
+                            HEDEF TESLİM TARİHİ
+                        </MudText>
+
+                        <MudDatePicker @bind-Date="_hedefTarihNullable"
+                                       Variant="Variant.Outlined"
+                                       DateFormat="dd.MM.yyyy"
+                                       Placeholder="Tarih seçin veya otomatik hesaplayın"
+                                       PickerVariant="PickerVariant.Dialog"
+                                       MinDate="DateTime.Today" />
+
+                        @if (_sonTahmin != null)
+                        {
+                            <div class="mt-2 pa-3 rounded-lg" style="background:rgba(250,204,21,0.06); border:1px solid rgba(250,204,21,0.2);">
+                                <div class="d-flex justify-space-between mb-1">
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">🔧 İŞÇİLİK</MudText>
+                                    <MudText Typo="Typo.caption" Style="color:white; font-weight:800;">@FormatDk(_sonTahmin.ToplamIscilikDk)</MudText>
+                                </div>
+                                <div class="d-flex justify-space-between mb-1">
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">⚙️ SETUP</MudText>
+                                    <MudText Typo="Typo.caption" Style="color:white; font-weight:800;">@FormatDk(_sonTahmin.ToplamHazirlikDk)</MudText>
+                                </div>
+                                <div class="d-flex justify-space-between mb-1">
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">☕ MOLA/GÜN</MudText>
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">90 dk</MudText>
+                                </div>
+                                <MudDivider Class="my-1" Style="opacity:0.2;" />
+                                <div class="d-flex justify-space-between mb-1">
+                                    <MudText Typo="Typo.caption" Style="color:#facc15; font-weight:900;">📦 TOPLAM</MudText>
+                                    <MudText Typo="Typo.caption" Style="color:#facc15; font-weight:900;">@FormatDk(_sonTahmin.ToplamDk)</MudText>
+                                </div>
+                                <div class="mt-2 pa-2 rounded-lg" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);">
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); font-size:0.62rem; line-height:1.5;">
+                                        ℹ️ Bu süre <b style="color:rgba(255,255,255,0.55);">tek teknisyen</b> varsayımıyla hesaplanmıştır.
+                                        Atölyenizdeki teknisyen sayısına göre tahmini tarihi kendiniz kısaltabilirsiniz.
+                                        (@((int)Math.Ceiling(_sonTahmin.ToplamDk / 510.0)) iş günü × 1 kişi)
+                                    </MudText>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <MudDivider Class="my-1" />
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="@(_isEdit ? Color.Info : Color.Primary)"
+                               FullWidth="true" Class="rounded-xl py-3 mt-2"
+                               Style="font-weight:900;"
+                               OnClick="BakimKaydet"
+                               StartIcon="@(_isEdit ? Icons.Material.Filled.Save : Icons.Material.Filled.FlightTakeoff)">
+                        @(_isEdit ? "Bilgileri Güncelle" : "Kabulü Tamamla")
+                    </MudButton>
+
+                    @if (_isEdit)
+                    {
+                        <MudButton Variant="Variant.Text" Color="Color.Default" FullWidth="true" OnClick="Vazgec">
+                            Vazgeç
+                        </MudButton>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        @* ─── LİSTE ─── *@
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-6 rounded-xxl cyber-card">
+                <MudTable Items="@_filtreliPlanlar" Hover="true" Elevation="0" Dense="true"
+                          Filter="new Func<BakimPlani, bool>(AramaFiltresi)">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.h6" Style="font-weight:800;">Güncel Kabul Listesi</MudText>
+                        <MudSpacer />
+                        <div class="d-flex align-center gap-2">
+                            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                                <MudButton OnClick='() => _durumFiltre = "Hepsi"'
+                                           Color="@(_durumFiltre == "Hepsi" ? Color.Primary : Color.Default)">Hepsi</MudButton>
+                                <MudButton OnClick='() => _durumFiltre = "Aktif"'
+                                           Color="@(_durumFiltre == "Aktif" ? Color.Warning : Color.Default)">Aktif</MudButton>
+                                <MudButton OnClick='() => _durumFiltre = "Tamamlandi"'
+                                           Color="@(_durumFiltre == "Tamamlandi" ? Color.Success : Color.Default)">Tamamlandı</MudButton>
+                            </MudButtonGroup>
+                            <MudTextField @bind-Value="_aramaMetni" Placeholder="Ara..."
+                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:220px;" />
+                        </div>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Kabul Tarihi</MudTh>
+                        <MudTh>Seri No</MudTh>
+                        <MudTh>Tip</MudTh>
+                        <MudTh>Birlik</MudTh>
+                        <MudTh>Tahmini Teslimat</MudTh>
+                        <MudTh>Durum</MudTh>
+                        <MudTh Style="width:110px; text-align:right;">İşlem</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.KabulTarihi.ToLocalTime().ToString("dd.MM.yyyy")</MudTd>
+                        <MudTd><MudText Style="font-weight:800;">@context.SeriNo</MudText></MudTd>
+                        <MudTd>@context.HeliTipi</MudTd>
+                        <MudTd>@context.GeldigiBirlik</MudTd>
+                        <MudTd>
+                            @if (context.HedefTeslimTarihi.HasValue)
+                            {
+                                var hedef = context.HedefTeslimTarihi.Value.ToLocalTime();
+                                var kalanGun = (hedef.Date - DateTime.Today).TotalDays;
+                                var gecikti = context.GenelDurumEnum != BakimDurumu.Tamamlandi && kalanGun < 0;
+                                var yaklasti = !gecikti && kalanGun <= 3;
+                                var renk = gecikti ? "#ef4444" : yaklasti ? "#facc15" : "rgba(255,255,255,0.85)";
+                                <div>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudText Typo="Typo.body2" Style="@($"font-weight:800; color:{renk}")">
+                                            @hedef.ToString("dd.MM.yyyy")
+                                        </MudText>
+                                        @if (context.GenelDurumEnum != BakimDurumu.Tamamlandi)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                     Color="@(gecikti ? Color.Error : yaklasti ? Color.Warning : Color.Default)"
+                                                     Style="font-size:0.6rem; font-weight:900; height:18px; padding:0 6px;">
+                                                @(gecikti ? $"{(int)-kalanGun}g GECİKTİ" : $"{(int)kalanGun}g kaldı")
+                                            </MudChip>
+                                        }
+                                    </div>
+                                    @{
+                                        var isler = context.KontrolKayitlari;
+                                        if (isler != null && isler.Any())
+                                        {
+                                            var iscilikDk  = isler.Sum(k => k.ParcaSablonu?.IslemSure     ?? 60);
+                                            var hazirlikDk = isler.Sum(k => k.ParcaSablonu?.HazirlikSuresi ?? 15);
+                                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); font-size:0.62rem;">
+                                                🔧 @FormatDk(iscilikDk) · ⚙️ @FormatDk(hazirlikDk) setup
+                                            </MudText>
+                                        }
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.2); font-style:italic;">Belirlenmedi</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            <MudChip T="string" Color="@GetDurumColor(context.GenelDurumEnum)"
+                                     Size="Size.Small" Class="rounded-lg">@context.GenelDurum</MudChip>
+                        </MudTd>
+                        <MudTd>
+                            <div class="d-flex align-center justify-end gap-1">
+                                @if (context.GenelDurumEnum == BakimDurumu.Beklemede)
+                                {
+                                    <MudTooltip Text="İş Emri Oluştur">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Send" Size="Size.Small" Color="Color.Primary"
+                                                       OnClick="@(() => Nav.NavigateTo($"/is-emri-dagitim?planId={context.Id}"))" />
+                                    </MudTooltip>
+                                }
+                                else if (context.GenelDurumEnum == BakimDurumu.DevamEdiyor)
+                                {
+                                    <MudTooltip Text="Atölye Paneli">
+                                        <MudIconButton Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small" Color="Color.Info"
+                                                       OnClick='() => Nav.NavigateTo("/atolye-operasyon")' />
+                                    </MudTooltip>
+                                }
+                                else
+                                {
+                                    <MudTooltip Text="Tamamlandı">
+                                        <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" Disabled="true" />
+                                    </MudTooltip>
+                                }
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+                                    <MudMenuItem Icon="@Icons.Material.Filled.Edit" IconColor="Color.Primary"
+                                                 OnClick="@(() => DuzenleHazirla(context))">Düzenle</MudMenuItem>
+                                    <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error"
+                                                 OnClick="@(() => SilBakim(context))">
+                                        <MudText Color="Color.Error">Sil</MudText>
+                                    </MudMenuItem>
+                                </MudMenu>
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <div class="pa-8 d-flex flex-column align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Color="Color.Default" />
+                            <MudText Class="mt-2" Style="color:rgba(255,255,255,0.3);">Kayıt bulunamadı.</MudText>
+                        </div>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+<style>
+    .header-indicator { width:8px; height:32px; background:#FACC15; border-radius:4px; box-shadow:0 0 15px #FACC15; }
+    .cyber-card {
+        background:rgba(15,20,25,0.6) !important; backdrop-filter:blur(12px);
+        border:1px solid rgba(255,255,255,0.05) !important;
+        box-shadow:0 20px 40px rgba(0,0,0,0.4) !important;
+    }
+</style>
+
+@code {
+    private BakimPlani _yeniPlan = new();
+    private List<BakimPlani> _mevcutPlanlar = new();
+    private bool _isEdit = false;
+    private string _aramaMetni = "";
+    private string _durumFiltre = "Hepsi";
+    private bool _hesaplaniyor = false;
+    private TeslimTahmini? _sonTahmin = null;
+    private int _aktifPersonelSayisi = 1;
+
+    // DatePicker nullable DateTime? ile çalışır
+    private DateTime? _hedefTarihNullable
+    {
+        get => _yeniPlan.HedefTeslimTarihi.HasValue
+            ? DateTime.SpecifyKind(_yeniPlan.HedefTeslimTarihi.Value.ToLocalTime(), DateTimeKind.Local)
+            : null;
+        set => _yeniPlan.HedefTeslimTarihi = value.HasValue
+            ? DateTime.SpecifyKind(value.Value.ToUniversalTime(), DateTimeKind.Utc)
+            : null;
+    }
+
+    private IEnumerable<BakimPlani> _filtreliPlanlar => _durumFiltre switch
+    {
+        "Aktif"      => _mevcutPlanlar.Where(p => p.GenelDurumEnum != BakimDurumu.Tamamlandi),
+        "Tamamlandi" => _mevcutPlanlar.Where(p => p.GenelDurumEnum == BakimDurumu.Tamamlandi),
+        _            => _mevcutPlanlar
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VerileriListele();
+        // Aktif personel sayısını al (otomatik tahmin için)
+        var personeller = await PersonelService.GetPersonellerAsync();
+        _aktifPersonelSayisi = Math.Max(personeller.Count(p => p.Durum == "Aktif"), 1);
+    }
+
+    private async Task VerileriListele()
+    {
+        _mevcutPlanlar = await BakimService.GetBakimPlanlariAsync();
+    }
+
+    private async Task OtomatikHesapla()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniPlan.HeliTipi))
+        {
+            Snackbar.Add("Önce helikopter tipini seçin.", Severity.Warning);
+            return;
+        }
+
+        _hesaplaniyor = true;
+        _sonTahmin = null;
+        StateHasChanged();
+
+        var tumSablonlar = await BakimService.GetParcaSablonlariAsync();
+        var heliSablonlari = tumSablonlar.Where(s => s.HeliTipi == _yeniPlan.HeliTipi).ToList();
+
+        int iscilikDk  = heliSablonlari.Sum(s => s.IslemSure);
+        int hazirlikDk = heliSablonlari.Sum(s => s.HazirlikSuresi);
+        int toplamDk   = iscilikDk + hazirlikDk;
+
+        var baslangic = _yeniPlan.KabulTarihi > DateTime.MinValue
+            ? _yeniPlan.KabulTarihi
+            : DateTime.UtcNow;
+
+        var tahminiTarih = await ZamanServisi.TahminiBitisHesaplaAsync(baslangic, toplamDk);
+
+        _sonTahmin = new TeslimTahmini(tahminiTarih, iscilikDk, hazirlikDk, toplamDk, 1);
+        _yeniPlan.HedefTeslimTarihi = tahminiTarih;
+
+        _hesaplaniyor = false;
+    }
+
+    private static string FormatDk(int dk)
+    {
+        if (dk <= 0) return "—";
+        var s = dk / 60;
+        var m = dk % 60;
+        return m == 0 ? $"{s}s" : $"{s}s {m}dk";
+    }
+
+    private bool AramaFiltresi(BakimPlani plan)
+    {
+        if (string.IsNullOrWhiteSpace(_aramaMetni)) return true;
+        return plan.SeriNo.Contains(_aramaMetni, StringComparison.OrdinalIgnoreCase)
+            || plan.HeliTipi.Contains(_aramaMetni, StringComparison.OrdinalIgnoreCase)
+            || plan.GeldigiBirlik.Contains(_aramaMetni, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void DuzenleHazirla(BakimPlani plan)
+    {
+        _yeniPlan = new BakimPlani
+        {
+            Id = plan.Id,
+            SeriNo = plan.SeriNo,
+            HeliTipi = plan.HeliTipi,
+            GeldigiBirlik = plan.GeldigiBirlik,
+            KabulTarihi = plan.KabulTarihi,
+            GenelDurum = plan.GenelDurum,
+            HedefTeslimTarihi = plan.HedefTeslimTarihi
+        };
+        _isEdit = true;
+        _sonTahmin = null;
+        Snackbar.Add($"{plan.SeriNo} düzenleme moduna alındı.", Severity.Info);
+    }
+
+    private void Vazgec()
+    {
+        _yeniPlan = new BakimPlani();
+        _isEdit = false;
+        _sonTahmin = null;
+    }
+
+    private async Task SilBakim(BakimPlani plan)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Kaydı Sil",
+            $"{plan.SeriNo} seri numaralı hava aracını sistemden silmek istediğinize emin misiniz?",
+            yesText: "Sil!", cancelText: "İptal");
+
+        if (result == true)
+        {
+            var success = await BakimService.DeleteBakimPlaniAsync(plan.Id);
+            if (success)
+            {
+                Snackbar.Add("Kayıt başarıyla silindi.", Severity.Warning);
+                await VerileriListele();
+            }
+        }
+    }
+
+    private async Task BakimKaydet()
+    {
+        if (string.IsNullOrWhiteSpace(_yeniPlan.SeriNo) ||
+            string.IsNullOrWhiteSpace(_yeniPlan.HeliTipi) ||
+            string.IsNullOrWhiteSpace(_yeniPlan.GeldigiBirlik))
+        {
+            Snackbar.Add("Lütfen tüm alanları eksiksiz doldurunuz!", Severity.Warning);
+            return;
+        }
+
+        bool success;
+        if (_isEdit)
+        {
+            success = await BakimService.UpdateBakimPlaniAsync(_yeniPlan);
+            if (success) Snackbar.Add("Bilgiler güncellendi.", Severity.Success);
+        }
+        else
+        {
+            success = await BakimService.AddBakimPlaniAsync(_yeniPlan);
+            if (success) Snackbar.Add($"{_yeniPlan.SeriNo} kaydı açıldı.", Severity.Success);
+        }
+
+        if (success)
+        {
+            _yeniPlan = new BakimPlani();
+            _isEdit = false;
+            _sonTahmin = null;
+            await VerileriListele();
+        }
+        else
+        {
+            Snackbar.Add("İşlem sırasında bir hata oluştu.", Severity.Error);
+        }
+    }
+
+    private Color GetDurumColor(BakimDurumu durum) => durum switch
+    {
+        BakimDurumu.Beklemede   => Color.Default,
+        BakimDurumu.DevamEdiyor => Color.Warning,
+        BakimDurumu.Tamamlandi  => Color.Success,
+        _                        => Color.Default
+    };
+}

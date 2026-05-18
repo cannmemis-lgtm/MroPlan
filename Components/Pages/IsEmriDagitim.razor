@@ -1,0 +1,712 @@
+@page "/is-emri-dagitim"
+@using MudBlazor
+@using MroPlan.Models
+@using MroPlan.Models.Enums
+@using MroPlan.Services
+@using MroPlan.Data
+@using Microsoft.EntityFrameworkCore
+@inject IBakimService BakimService
+@inject IYetkinlikService YetkinlikService
+@inject IPersonelService PersonelService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-6 animate-fade-in">
+    <div class="d-flex align-center justify-space-between mb-4">
+        <div>
+            <MudText Typo="Typo.h4" Style="font-weight: 900;">İş Emri Dağıtımı</MudText>
+            <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Bakım planlarını yönetin ve iş emirlerini dağıtın.</MudText>
+        </div>
+    </div>
+
+    <MudGrid Spacing="6">
+        @* Sol Panel: Araç Listesi (Açılır-Kapanır) *@
+        <MudItem xs="12" md="4">
+            <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                <MudExpansionPanel Expanded="true" Class="rounded-xl overflow-hidden border">
+                    <TitleContent>
+                        <div class="d-flex align-center gap-4">
+                            <div class="d-flex align-center cursor-pointer" @onclick="@(() => _solListeFiltre = "Hepsi")">
+                                <MudIcon Icon="@Icons.Material.Filled.Flight" Class="mr-2" Color="Color.Primary" />
+                                <MudText Typo="Typo.h6" Style="font-weight: 700;">Hava Araçları</MudText>
+                            </div>
+                            
+                            @* Mini KPIlar (Filtreleme Özelliği Eklendi) *@
+                            <div class="d-flex align-center gap-2 ml-4">
+                                <div class="d-flex align-center px-3 py-1 rounded-pill cursor-pointer hover-filter" 
+                                     style="background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.25); transition: all 0.2s;"
+                                     @onclick:stopPropagation="true"
+                                     @onclick="@(() => _solListeFiltre = "Bekleyen")">
+                                    <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Size="Size.Small" Style="color: #60a5fa; font-size: 1rem;" Class="mr-1"/>
+                                    <MudText Typo="Typo.caption" Style="color: #93bbfc; font-weight: 700;">@_kabulEdilenUcaklar.Count(x => !x.KontrolKayitlari.Any()) Bekleyen</MudText>
+                                </div>
+                                <div class="d-flex align-center px-3 py-1 rounded-pill cursor-pointer hover-filter" 
+                                     style="background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25); transition: all 0.2s;"
+                                     @onclick:stopPropagation="true"
+                                     @onclick="@(() => _solListeFiltre = "Atolyede")">
+                                    <MudIcon Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small" Style="color: #4ade80; font-size: 1rem;" Class="mr-1"/>
+                                    <MudText Typo="Typo.caption" Style="color: #86efac; font-weight: 700;">@_kabulEdilenUcaklar.Count(x => x.KontrolKayitlari.Any()) Atölyede</MudText>
+                                </div>
+                            </div>
+                        </div>
+                    </TitleContent>
+                    <ChildContent>
+                        <div class="vehicle-list-container pa-1">
+                            @{
+                                var filtrelenmişListe = _solListeFiltre switch {
+                                    "Bekleyen" => _kabulEdilenUcaklar.Where(x => !x.KontrolKayitlari.Any()),
+                                    "Atolyede" => _kabulEdilenUcaklar.Where(x => x.KontrolKayitlari.Any()),
+                                    _ => _kabulEdilenUcaklar
+                                };
+                            }
+                            @if (filtrelenmişListe.Any())
+                            {
+                                @foreach (var plan in filtrelenmişListe)
+                                {
+                                    <div class="@GetCardClass(plan)" @onclick="@(() => PlanSec(plan.Id))">
+                                        <div class="d-flex align-center gap-4">
+                                            @* Sol Simge Alanı *@
+                                            <div class="heli-icon-container">
+                                                <MudIcon Icon="@Icons.Material.Filled.Flight" Size="Size.Small" />
+                                            </div>
+
+                                            @* Orta Bilgi Alanı *@
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-center justify-space-between">
+                                                    <MudText Typo="Typo.subtitle1" Style="font-weight: 800; font-size: 1.1rem;">@plan.SeriNo</MudText>
+                                                    <div class="d-flex align-center gap-1">
+                                                        @if (plan.KontrolKayitlari.Any())
+                                                        {
+                                                            <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Text" Style="font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px;">ATÖLYEDE</MudChip>
+                                                            <div @onclick:stopPropagation="true">
+                                                                <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" Color="Color.Error" 
+                                                                               Style="padding: 2px;" 
+                                                                               OnClick="@(() => GeriAl(plan))" />
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                <div class="d-flex align-center mt-1">
+                                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45); font-weight: 600;">@plan.HeliTipi</MudText>
+                                                </div>
+                                                
+                                                @if (plan.KontrolKayitlari.Any())
+                                                {
+                                                    <div class="mt-2 d-flex align-center gap-1">
+                                                        <div class="px-2 py-0.5 rounded-pill" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2);">
+                                                            <MudText Typo="Typo.caption" Style="color: #93bbfc; font-weight: 700;">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Timeline" Size="Size.Small" Style="font-size: 0.8rem;" Class="mr-1"/>
+                                                                @FormatSureDetayli(plan.KontrolKayitlari.Sum(x => x.ParcaSablonu?.IslemSure ?? 0))
+                                                            </MudText>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            @* Sağ Seçim Göstergesi *@
+                                            @if (plan.Id == _seciliPlanId)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Primary" Size="Size.Small" />
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="pa-12 d-flex flex-column align-center justify-center border-2 border-dashed rounded-xl" style="background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08);">
+                                    <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Default" />
+                                    <MudText Class="mt-4" Style="color: rgba(255,255,255,0.3); font-weight: 700;">Gösterilecek araç yok.</MudText>
+                                </div>
+                            }
+                        </div>
+                    </ChildContent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        </MudItem>
+
+        @* Sağ Panel: Dağıtım Detayları (Açılır-Kapanır yapıldı) *@
+        <MudItem xs="12" md="8">
+            <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                @if (_seciliPlanId > 0)
+                {
+                    <MudExpansionPanel Expanded="true" Class="rounded-xl overflow-hidden border">
+                        <TitleContent>
+                            <div class="d-flex align-center gap-3">
+                                <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Primary" />
+                                <MudText Typo="Typo.h6" Style="font-weight: 800;">
+                                    Gönderilecek İş Emirleri (@_seciliPlan?.SeriNo)
+                                </MudText>
+                            </div>
+                        </TitleContent>
+                        <ChildContent>
+                            <div class="pa-0">
+                                <div class="pa-6">
+                                    <div class="d-flex justify-space-between align-center mb-6">
+                                        <div>
+                                            <div class="d-flex align-center gap-3">
+                                                <MudText Typo="Typo.h5" Style="font-weight: 900;">@_seciliPlan?.SeriNo</MudText>
+                                                <MudChip T="string" Color="Color.Primary" Variant="Variant.Text" Size="Size.Small" Style="font-weight: 700; background: rgba(59,130,246,0.1);">@_seciliPlan?.HeliTipi</MudChip>
+                                            </div>
+                                            <div class="mt-2">
+                                                <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.45); font-weight: 600;">@_seciliSablonGörünümleri.Count / @_sablonlar.Count İş Seçildi</MudText>
+                                            </div>
+                                        </div>
+                                        <MudButton Variant="Variant.Filled" 
+                                                   Color="Color.Primary" 
+                                                   Size="Size.Large" 
+                                                   OnClick="TopluAta" 
+                                                   Disabled="@(!_seciliSablonGörünümleri.Any(x => !x.IsSent))"
+                                                   StartIcon="@Icons.Material.Filled.Send" 
+                                                   Style="border-radius: 12px; font-weight: 800; px-8; box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.25);">
+                                            ATÖLYELERE GÖNDER
+                                        </MudButton>
+                                    </div>
+
+                                    <div class="d-flex align-center gap-2 mb-4">
+                                        <MudTextField @bind-Value="_searchString" 
+                                                      Placeholder="Parça veya P/N ara..." 
+                                                      Adornment="Adornment.Start" 
+                                                      AdornmentIcon="@Icons.Material.Filled.Search" 
+                                                      Variant="Variant.Outlined" 
+                                                      Margin="Margin.Dense"
+                                                      Class="rounded-lg flex-grow-1" />
+                                        
+                                        <MudButtonGroup Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small" Class="rounded-lg">
+                                            <MudButton OnClick="HepsiniSec" StartIcon="@Icons.Material.Filled.SelectAll" Style="font-weight: 700; text-transform: none;">Hepsini Seç</MudButton>
+                                            <MudButton OnClick="@(() => _seciliSablonGörünümleri.Clear())" StartIcon="@Icons.Material.Filled.ClearAll" Style="font-weight: 700; text-transform: none;">Temizle</MudButton>
+                                        </MudButtonGroup>
+                                    </div>
+
+                                    <MudTable Items="@_sablonGörünümleri" 
+                                              MultiSelection="true" 
+                                              @bind-SelectedItems="_seciliSablonGörünümleri" 
+                                              Hover="true" 
+                                              Elevation="0" 
+                                              Dense="true"
+                                              Filter="new Func<SablonViewModel,bool>(FilterFunc)"
+                                              Class="modern-table border rounded-xl overflow-hidden">
+                                        <HeaderContent>
+                                            <MudTh><MudTableSortLabel SortBy="new Func<SablonViewModel, object>(x=>x.Sablon.ParcaAdi)">Parça Adı</MudTableSortLabel></MudTh>
+                                            <MudTh>P/N</MudTh>
+                                            <MudTh>Hedef Atölye</MudTh>
+                                            <MudTh>Süre</MudTh>
+                                            <MudTh>Durum</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            <MudTd DataLabel="Parça Adı">
+                                                <MudText Typo="Typo.body2" Style="@($"font-weight: 700; color: {(context.IsSent ? "#71717A" : "inherit")}")">@context.Sablon.ParcaAdi</MudText>
+                                            </MudTd>
+                                            <MudTd DataLabel="P/N">
+                                                <code style="background: rgba(250,204,21,0.08); color: #FACC15; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">@context.Sablon.ParcaPN</code>
+                                            </MudTd>
+                                            <MudTd DataLabel="Hedef Atölye">
+                                                <MudText Typo="Typo.body2" Color="Color.Info" Style="font-weight: 600;">@context.Sablon.BakimGrubu?.GrupAdi</MudText>
+                                            </MudTd>
+                                            <MudTd>@FormatSureDetayli(context.Sablon.IslemSure)</MudTd>
+                                            <MudTd>
+                                                @if (context.IsSent)
+                                                {
+                                                    <div class="d-flex align-center text-success">
+                                                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1"/>
+                                                        <MudText Typo="Typo.caption" Style="font-weight: 800;">GÖNDERİLDİ</MudText>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Style="color: rgba(255,255,255,0.45); font-weight: 700;">HAZIR</MudChip>
+                                                }
+                                            </MudTd>
+                                        </RowTemplate>
+                                        <NoRecordsContent>
+                                            <div class="pa-12 d-flex flex-column align-center text-center">
+                                                <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Color="Color.Default" Style="font-size: 4rem;"/>
+                                                <MudText Class="mt-4" Color="Color.Secondary" Style="font-weight: 700;">Gösterilecek kayıt bulunamadı.</MudText>
+                                            </div>
+                                        </NoRecordsContent>
+                                        <PagerContent>
+                                            <MudTablePager RowsPerPageString="Satır:" />
+                                        </PagerContent>
+                                    </MudTable>
+                                </div>
+                            </div>
+                        </ChildContent>
+                    </MudExpansionPanel>
+                }
+                else
+                {
+                    <div class="d-flex flex-column align-center justify-center rounded-xl border-2 border-dashed pa-12" style="height: 400px; background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08);">
+                        <MudIcon Icon="@Icons.Material.Filled.TouchApp" Size="Size.Large" Style="font-size: 5rem; color: rgba(255,255,255,0.2);" />
+                        <MudText Typo="Typo.h6" Class="mt-4" Style="color: rgba(255,255,255,0.35); font-weight: 700;">Detayları Görüntüle</MudText>
+                        <MudText Typo="Typo.body1" Align="Align.Center" Style="color: rgba(255,255,255,0.25); max-width: 300px;">Soldaki listeden bir araç seçerek bekleyen şablonları yönetebilirsiniz.</MudText>
+                    </div>
+                }
+            </MudExpansionPanels>
+        </MudItem>
+
+        @* Alt Panel: Gönderilen İş Emirleri Geçmişi (Açılır-Kapanır) *@
+        <MudItem xs="12">
+            <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                <MudExpansionPanel Class="rounded-xl overflow-hidden border mt-4">
+                    <TitleContent>
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Style="font-weight: 700;">Gönderilen İş Emirleri Geçmişi</MudText>
+                        </div>
+                    </TitleContent>
+                    <ChildContent>
+                        <MudTable Items="@_gecmisEmirler" Dense="true" Hover="true" Elevation="0" Class="modern-table">
+                            <HeaderContent>
+                                <MudTh>Bakıma Giriş</MudTh>
+                                <MudTh>Kabul Tarihi</MudTh>
+                                <MudTh>Heli Tipi</MudTh>
+                                <MudTh>Kuyruk No</MudTh>
+                                <MudTh>Parça</MudTh>
+                                <MudTh>Atölye</MudTh>
+                                <MudTh>Durum</MudTh>
+                                <MudTh>Geliştirme</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.IslemTarihi.ToLocalTime().ToString("g")</MudTd>
+                                <MudTd>@context.BakimPlani?.KabulTarihi.ToLocalTime().ToString("g")</MudTd>
+                                <MudTd>@context.BakimPlani?.HeliTipi</MudTd>
+                                <MudTd Style="font-weight: 700;">@context.BakimPlani?.SeriNo</MudTd>
+                                <MudTd>@context.ParcaSablonu?.ParcaAdi</MudTd>
+                                <MudTd>@context.ParcaSablonu?.BakimGrubu?.GrupAdi</MudTd>
+                                <MudTd>
+                                    <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Text">@context.Durum</MudChip>
+                                </MudTd>
+                                <MudTd>
+                                    @if (context.GelistirmeModu)
+                                    {
+                                        <MudTooltip Text="@($"Geliştirme modu aktif — {context.GelistirmePersonel?.AdSoyad ?? "Personel"}")">
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                                     Style="background: rgba(234,179,8,0.15); color: #fbbf24; font-weight: 800; font-size: 0.65rem;">
+                                                GELİŞTİRME
+                                            </MudChip>
+                                        </MudTooltip>
+                                    }
+                                    else if (context.AtananPersonelId == null && context.Durum == "Beklemede")
+                                    {
+                                        <MudTooltip Text="Uygun personel atanmadı. Geliştirme moduna alarak düşük SV'li personelin deneyim kazanmasını sağlayın.">
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                       Style="border-color: #fbbf24; color: #fbbf24; font-size: 0.65rem; font-weight: 800; padding: 2px 8px;"
+                                                       OnClick="@(() => GelistirmeDialogAc(context))">
+                                                GELİŞTİRMEYE AL
+                                            </MudButton>
+                                        </MudTooltip>
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                            <PagerContent>
+                                <MudTablePager RowsPerPageString="Satır:" />
+                            </PagerContent>
+                        </MudTable>
+                    </ChildContent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@* Geliştirme Modu Dialog *@
+@if (_gelistirmeDialogAcik && _gelistirmeHedefKayit != null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="1200" />
+    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1300; min-width: 400px;">
+        <MudPaper Elevation="8" Class="pa-6 rounded-xl">
+            <MudText Typo="Typo.h6" Style="font-weight: 800; color: #fbbf24;" Class="mb-1">Geliştirme Moduna Al</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Parça: <strong>@_gelistirmeHedefKayit.ParcaSablonu?.ParcaAdi</strong>
+            </MudText>
+            <MudSelect T="int?" Label="Personel Seç" @bind-Value="_secilenGelistirmePersonelId"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4">
+                @foreach (var p in _tumPersonel)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)p.Id)">@p.AdSoyad (@p.AtolyeKodu)</MudSelectItem>
+                }
+            </MudSelect>
+            <div class="d-flex gap-2 justify-end">
+                <MudButton Variant="Variant.Text" OnClick="@(() => _gelistirmeDialogAcik = false)">İptal</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                           Disabled="@(_secilenGelistirmePersonelId == null)"
+                           OnClick="GelistirmeOnayla">Onayla</MudButton>
+            </div>
+        </MudPaper>
+    </div>
+}
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+    @@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .vehicle-list-container {
+        max-height: 600px;
+        overflow-y: auto;
+        padding: 4px;
+    }
+
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    .hover-filter:hover {
+        transform: translateY(-2px);
+        filter: brightness(0.95);
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }.vehicle-list-container::-webkit-scrollbar { width: 6px; }
+    .vehicle-list-container::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+
+    .vehicle-card { 
+        padding: 16px 20px; 
+        margin-bottom: 12px; 
+        border-radius: 16px; 
+        border: 1px solid rgba(255,255,255,0.08); 
+        cursor: pointer; 
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        background: rgba(255,255,255,0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Sol taraftaki durum çubuğu */
+    .vehicle-card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: #3f3f46;
+        transition: all 0.3s ease;
+    }
+
+    .vehicle-card:hover { 
+        transform: translateY(-2px); 
+        box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1);
+        border-color: #3b82f6;
+    }
+
+    .vehicle-card-active { 
+        border-color: var(--gold, #FACC15) !important; 
+        background: linear-gradient(to right, rgba(250,204,21,0.06), rgba(255,255,255,0.04)) !important;
+        box-shadow: 0 4px 12px -2px rgba(250, 204, 21, 0.15);
+    }
+    
+    .vehicle-card-active::before {
+        background: #3b82f6 !important;
+        width: 6px;
+    }
+
+    .vehicle-card-in-workshop { 
+        background: rgba(59,130,246,0.06) !important; 
+        border-color: rgba(59,130,246,0.15) !important; 
+    }
+    
+    .vehicle-card-in-workshop::before {
+        background: #0284c7 !important;
+    }
+
+    .vehicle-card-in-workshop:hover { background: rgba(59,130,246,0.1) !important; }
+
+    .heli-icon-container {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255,255,255,0.06);
+        color: rgba(255,255,255,0.5);
+        transition: all 0.3s ease;
+    }
+    
+    .vehicle-card-active .heli-icon-container {
+        background: var(--gold, #FACC15);
+        color: black;
+    }
+
+    .border-b { border-bottom: 1px solid #e2e8f0; }
+    .modern-table .mud-table-head { background: rgba(255,255,255,0.04); border-bottom: 2px solid rgba(255,255,255,0.08); }
+    .modern-table .mud-table-row:hover { background: rgba(250,204,21,0.04) !important; }
+</style>
+
+@code {
+    [Inject] private ApplicationDbContext Context { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "planId")]
+    public int QueryPlanId { get; set; }
+
+    private int _seciliPlanId;
+    private BakimPlani? _seciliPlan;
+    private List<BakimPlani> _kabulEdilenUcaklar = new();
+    private List<ParcaSablonu> _sablonlar = new();
+    private List<SablonViewModel> _sablonGörünümleri = new();
+    private HashSet<SablonViewModel> _seciliSablonGörünümleri = new();
+    private List<BakimKontrolKaydi> _gecmisEmirler = new();
+    private string _searchString = "";
+    private string _solListeFiltre = "Hepsi";
+    private bool _ilkYukleme = true;
+
+    public class SablonViewModel
+    {
+        public ParcaSablonu Sablon { get; set; } = null!;
+        public bool IsSent { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VerileriYukle();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_ilkYukleme && QueryPlanId > 0)
+        {
+            _ilkYukleme = false;
+            await PlanSec(QueryPlanId);
+            _solListeFiltre = "Hepsi";
+        }
+    }
+
+    private async Task VerileriYukle()
+    {
+        _kabulEdilenUcaklar = await Context.BakimPlanlari
+            .Include(x => x.KontrolKayitlari)
+                .ThenInclude(k => k.ParcaSablonu)
+            .Where(x => x.GenelDurum == nameof(BakimDurumu.Beklemede) || x.GenelDurum == nameof(BakimDurumu.DevamEdiyor))
+            .OrderByDescending(x => x.KabulTarihi)
+            .ToListAsync();
+        
+        _gecmisEmirler = await Context.BakimKontrolKayitlari
+            .Include(x => x.BakimPlani)
+            .Include(x => x.ParcaSablonu)
+                .ThenInclude(s => s!.BakimGrubu)
+            .Include(x => x.GelistirmePersonel)
+            .OrderByDescending(x => x.IslemTarihi)
+            .Take(50)
+            .ToListAsync();
+    }
+
+    private async Task PlanSec(int id)
+    {
+        _seciliPlanId = id;
+        _seciliPlan = _kabulEdilenUcaklar.FirstOrDefault(x => x.Id == id);
+        _seciliSablonGörünümleri.Clear();
+        _sablonGörünümleri = new();
+        
+        StateHasChanged();
+        
+        try 
+        {
+            if (_seciliPlan != null)
+            {
+                var heliTipi = _seciliPlan.HeliTipi.Trim().ToLower();
+                
+                var gonderilenSablonIdleri = await Context.BakimKontrolKayitlari
+                    .Where(x => x.BakimPlaniId == id)
+                    .Select(x => x.ParcaSablonuId)
+                    .ToListAsync();
+
+                _sablonlar = await Context.ParcaSablonlari
+                    .Include(x => x.BakimGrubu)
+                    .Where(s => s.HeliTipi.ToLower() == heliTipi)
+                    .ToListAsync();
+
+                _sablonGörünümleri = _sablonlar.Select(s => new SablonViewModel
+                {
+                    Sablon = s,
+                    IsSent = gonderilenSablonIdleri.Contains(s.Id)
+                })
+                .OrderBy(x => !x.IsSent) // Gönderilenler en üstte
+                .ThenBy(x => x.Sablon.ParcaAdi)
+                .ToList();
+                
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Veriler yüklenirken bir hata oluştu: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private void GrupSec(string grupAdi)
+    {
+        var grupSablonlari = _sablonGörünümleri.Where(x => !x.IsSent && (x.Sablon.BakimGrubu?.GrupAdi ?? "Diğer") == grupAdi);
+        foreach (var s in grupSablonlari)
+        {
+            _seciliSablonGörünümleri.Add(s);
+        }
+    }
+
+    private void HepsiniSec()
+    {
+        foreach (var s in _sablonGörünümleri.Where(x => !x.IsSent))
+        {
+            _seciliSablonGörünümleri.Add(s);
+        }
+    }
+
+    private string FormatSure(int toplamDakika)
+    {
+        if (toplamDakika == 0) return "0 dk";
+        if (toplamDakika < 60) return $"{toplamDakika} dk";
+        int saat = toplamDakika / 60;
+        int dk = toplamDakika % 60;
+        return dk > 0 ? $"{saat} sa {dk} dk" : $"{saat} sa";
+    }
+
+    private string FormatSureDetayli(int toplamDakika)
+    {
+        if (toplamDakika == 0) return "0 dk";
+        
+        var span = TimeSpan.FromMinutes(toplamDakika);
+        var parts = new List<string>();
+        
+        if (span.Days > 0) parts.Add($"{span.Days} gün");
+        if (span.Hours > 0) parts.Add($"{span.Hours} sa");
+        if (span.Minutes > 0) parts.Add($"{span.Minutes} dk");
+        
+        return string.Join(" ", parts);
+    }
+
+    private bool FilterFunc(SablonViewModel model)
+    {
+        if (!string.IsNullOrWhiteSpace(_searchString) && 
+            !model.Sablon.ParcaAdi.Contains(_searchString, StringComparison.OrdinalIgnoreCase) && 
+            !model.Sablon.ParcaPN.Contains(_searchString, StringComparison.OrdinalIgnoreCase)) return false;
+
+        return true;
+    }
+
+    private async Task TopluAta()
+    {
+        if (!_seciliSablonGörünümleri.Any()) return;
+
+        try
+        {
+            foreach (var viewModel in _seciliSablonGörünümleri)
+            {
+                var yeniKayit = new BakimKontrolKaydi
+                {
+                    BakimPlaniId = _seciliPlanId,
+                    ParcaSablonuId = viewModel.Sablon.Id,
+                    Durum = nameof(BakimDurumu.Beklemede),
+                    IslemTarihi = DateTime.UtcNow,
+                    TeknisyenNotu = "Dağıtım ekranından atölyeye gönderildi."
+                };
+                Context.BakimKontrolKayitlari.Add(yeniKayit);
+            }
+
+            // Aracın durumunu güncelle (eğer beklemedeyse)
+            if (_seciliPlan != null && _seciliPlan.GenelDurum == nameof(BakimDurumu.Beklemede))
+            {
+                _seciliPlan.GenelDurum = nameof(BakimDurumu.DevamEdiyor);
+            }
+
+            await Context.SaveChangesAsync();
+            int gonderilenSayi = _seciliSablonGörünümleri.Count;
+
+            await VerileriYukle();
+            await PlanSec(_seciliPlanId);
+
+            Snackbar.Add($"{gonderilenSayi} iş emri oluşturuldu. Atölye panelinde personel atayabilirsiniz.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Hata: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task GeriAl(BakimPlani plan)
+    {
+        try
+        {
+            var bekleyenler = await Context.BakimKontrolKayitlari
+                .Where(x => x.BakimPlaniId == plan.Id && x.Durum == nameof(BakimDurumu.Beklemede))
+                .ToListAsync();
+
+            if (!bekleyenler.Any())
+            {
+                Snackbar.Add("Geri alınacak bekleyen iş emri yok. Atölyede işlem gören kayıtlar korunur.", Severity.Info);
+                return;
+            }
+
+            bool? onay = await DialogService.ShowMessageBoxAsync(
+                "İş Emirlerini Geri Al",
+                $"{bekleyenler.Count} adet 'Beklemede' iş emri silinecek. Atölyede işlem görenler etkilenmeyecek. Devam edilsin mi?",
+                yesText: "Evet, Sil", cancelText: "İptal");
+
+            if (onay != true) return;
+
+            Context.BakimKontrolKayitlari.RemoveRange(bekleyenler);
+
+            var kalanDevam = await Context.BakimKontrolKayitlari
+                .AnyAsync(x => x.BakimPlaniId == plan.Id && x.Durum != nameof(BakimDurumu.Beklemede));
+
+            if (!kalanDevam)
+            {
+                var planEntity = await Context.BakimPlanlari.FindAsync(plan.Id);
+                if (planEntity != null) planEntity.GenelDurum = nameof(BakimDurumu.Beklemede);
+            }
+
+            await Context.SaveChangesAsync();
+            Snackbar.Add($"{bekleyenler.Count} iş emri geri alındı.", Severity.Warning);
+            await VerileriYukle();
+            if (_seciliPlanId == plan.Id) await PlanSec(plan.Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Geri alma hatası: " + ex.Message, Severity.Error);
+        }
+    }
+
+    private List<Personel> _tumPersonel = new();
+    private bool _gelistirmeDialogAcik = false;
+    private BakimKontrolKaydi? _gelistirmeHedefKayit;
+    private int? _secilenGelistirmePersonelId;
+
+    private async Task GelistirmeDialogAc(BakimKontrolKaydi kayit)
+    {
+        _gelistirmeHedefKayit = kayit;
+        _secilenGelistirmePersonelId = null;
+        if (!_tumPersonel.Any())
+            _tumPersonel = (await PersonelService.GetPersonellerAsync()).Where(p => p.Durum == "Aktif").ToList();
+
+        // Eşiğe en yakın personeli bul — parcasablonu için en fazla kart yapan
+        if (kayit.ParcaSablonuId > 0)
+        {
+            var yetkinlikler = await YetkinlikService.GetYetkinliklerAsync();
+            var enYakin = yetkinlikler
+                .Where(y => y.ParcaSablonuId == kayit.ParcaSablonuId && y.YetkinlikSeviyesi < 5)
+                .OrderByDescending(y => y.TamamlananKartSayisi)
+                .FirstOrDefault();
+            _secilenGelistirmePersonelId = enYakin?.PersonelId ?? _tumPersonel.FirstOrDefault()?.Id;
+        }
+
+        _gelistirmeDialogAcik = true;
+    }
+
+    private async Task GelistirmeOnayla()
+    {
+        if (_gelistirmeHedefKayit == null || _secilenGelistirmePersonelId == null) return;
+        await YetkinlikService.GelistirmeModunaAlAsync(_gelistirmeHedefKayit, _secilenGelistirmePersonelId.Value);
+        _gelistirmeDialogAcik = false;
+        Snackbar.Add("Kart geliştirme moduna alındı.", Severity.Warning);
+        await VerileriYukle();
+    }
+
+    private string GetCardClass(BakimPlani plan)
+    {
+        var classes = new List<string> { "vehicle-card" };
+        
+        if (plan.Id == _seciliPlanId)
+            classes.Add("vehicle-card-active");
+        else if (plan.KontrolKayitlari.Any())
+            classes.Add("vehicle-card-in-workshop");
+            
+        return string.Join(" ", classes);
+    }
+}

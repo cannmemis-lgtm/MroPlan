@@ -1,0 +1,301 @@
+@page "/performans-analizi"
+@using Microsoft.EntityFrameworkCore
+@using MroPlan.Data
+@using MroPlan.Models
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Performans Analizi</PageTitle>
+
+<style>
+    .perf-card {
+        background: rgba(10,15,25,0.7);
+        border: 1px solid rgba(250,204,21,0.12);
+        border-radius: 16px;
+        backdrop-filter: blur(12px);
+        transition: all 0.3s ease;
+    }
+    .perf-card:hover { border-color: rgba(250,204,21,0.3); }
+    .kpi-card {
+        background: rgba(10,15,25,0.8);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 14px;
+    }
+    .kat-chip-hizli  { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.3);  border-radius: 20px; padding: 2px 10px; font-size: 0.72rem; font-weight: 800; }
+    .kat-chip-normal { background: rgba(250,204,21,0.12); color: #facc15; border: 1px solid rgba(250,204,21,0.3); border-radius: 20px; padding: 2px 10px; font-size: 0.72rem; font-weight: 800; }
+    .kat-chip-yavas  { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.3);  border-radius: 20px; padding: 2px 10px; font-size: 0.72rem; font-weight: 800; }
+    .bar-fill { height: 6px; border-radius: 3px; transition: width 0.8s ease; }
+</style>
+
+<div class="pa-6" style="max-width: 1400px; margin: 0 auto;">
+
+    @* ─── BAŞLIK ─── *@
+    <div class="d-flex align-center mb-6" style="gap: 16px;">
+        <div style="width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg,#facc15,#d97706);
+                    display:flex; align-items:center; justify-content:center;">
+            <MudIcon Icon="@Icons.Material.Rounded.Analytics" Style="color:black; font-size:1.5rem;" />
+        </div>
+        <div>
+            <MudText Typo="Typo.h5" Style="font-weight:900; color:white;">PERFORMANS ANALİZİ</MudText>
+            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:1px;">
+                GERÇEKLEŞTİRİLEN İŞLERE GÖRE PERSONEL VERİMLİLİK RAPORU
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudSelect T="string" Value="_filtre" ValueChanged="FiltreGuncelle"
+                   Label="Dönem" Variant="Variant.Outlined" Dense="true"
+                   Style="width:160px; color:white;">
+            <MudSelectItem Value=@("30")>Son 30 gün</MudSelectItem>
+            <MudSelectItem Value=@("90")>Son 90 gün</MudSelectItem>
+            <MudSelectItem Value=@("180")>Son 180 gün</MudSelectItem>
+            <MudSelectItem Value=@("0")>Tüm zamanlar</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_yukleniyor)
+    {
+        <div class="d-flex justify-center align-center" style="height:300px;">
+            <MudProgressCircular Color="Color.Warning" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else
+    {
+        @* ─── KPI ŞERIDI ─── *@
+        <MudGrid Spacing="3" Class="mb-6">
+            <MudItem xs="12" sm="6" md="3">
+                <div class="kpi-card pa-4">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:1px;">TAMAMLANAN İŞ</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#facc15;">@_toplamIs</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">GercekSureDk kayıtlı</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="kpi-card pa-4">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:1px;">ORT. KATSAYI</MudText>
+                    <MudText Typo="Typo.h4" Style="@($"font-weight:900; color:{KatsayiRenk(_ortKatsayi)};")">@_ortKatsayi.ToString("F2")</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">1.00 = standart süre</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="kpi-card pa-4">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:1px;">HIZLI PERSONEL</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#4ade80;">@_hizliSayisi</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">Katsayı &lt; 0.90</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="kpi-card pa-4">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:1px;">GELİŞİM GEREKLİ</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#f87171;">@_yavasSayisi</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">Katsayı &gt; 1.30</MudText>
+                </div>
+            </MudItem>
+        </MudGrid>
+
+        @* ─── PERSONEL KARTLARI ─── *@
+        @if (!_satirlar.Any())
+        {
+            <div class="perf-card pa-8 text-center">
+                <MudIcon Icon="@Icons.Material.Rounded.BarChart" Style="font-size:3rem; color:rgba(255,255,255,0.15);" />
+                <MudText Class="mt-3" Style="color:rgba(255,255,255,0.3); font-weight:700;">
+                    Seçili dönemde tamamlanan iş kaydı bulunamadı.
+                </MudText>
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.2);">
+                    "İşi Tamamla" butonu ile gerçek süre girilmiş kayıtlar burada görünür.
+                </MudText>
+            </div>
+        }
+        else
+        {
+            <div class="perf-card pa-0" style="overflow:hidden;">
+                <div class="pa-4" style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <MudText Style="font-weight:800; color:rgba(255,255,255,0.7); font-size:0.8rem; letter-spacing:1px;">
+                        PERSONEL BAZLI PERFORMANS TABLOSU
+                    </MudText>
+                </div>
+
+                @* Header *@
+                <div class="d-flex pa-3 px-5" style="background:rgba(255,255,255,0.03); font-size:0.7rem; font-weight:800; color:rgba(255,255,255,0.3); letter-spacing:0.8px;">
+                    <div style="flex:2;">PERSONEL</div>
+                    <div style="flex:1; text-align:center;">İŞ SAYISI</div>
+                    <div style="flex:1; text-align:center;">ORT. KATSAYI</div>
+                    <div style="flex:2; text-align:center;">VERİMLİLİK BARĞI</div>
+                    <div style="flex:2;">EN HIZLI PARÇA</div>
+                    <div style="flex:2;">GELİŞİM GEREKLİ PARÇA</div>
+                </div>
+
+                @foreach (var s in _satirlar.OrderBy(x => x.OrtKatsayi))
+                {
+                    <div class="d-flex align-center pa-3 px-5"
+                         style="border-top:1px solid rgba(255,255,255,0.04); transition:background 0.2s;"
+                         @onmouseenter="() => s.Hover = true"
+                         @onmouseleave="() => s.Hover = false">
+
+                        @* Personel *@
+                        <div style="flex:2;">
+                            <div class="d-flex align-center" style="gap:10px;">
+                                <MudAvatar Size="Size.Small"
+                                           Style="@($"background:linear-gradient(135deg,{KatsayiRenk(s.OrtKatsayi)}40,{KatsayiRenk(s.OrtKatsayi)}20); color:{KatsayiRenk(s.OrtKatsayi)}; font-size:0.65rem; font-weight:900;")">
+                                    @s.Initials
+                                </MudAvatar>
+                                <div>
+                                    <div style="font-weight:800; color:white; font-size:0.85rem;">@s.AdSoyad</div>
+                                    <div style="font-size:0.65rem; color:rgba(255,255,255,0.35);">@s.SicilNo</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* İş sayısı *@
+                        <div style="flex:1; text-align:center;">
+                            <span style="font-weight:900; color:white; font-size:1rem;">@s.IsCount</span>
+                        </div>
+
+                        @* Katsayı *@
+                        <div style="flex:1; text-align:center;">
+                            <span class="@KatsayiChipClass(s.OrtKatsayi)">@s.OrtKatsayi.ToString("F2")</span>
+                        </div>
+
+                        @* Bar *@
+                        <div style="flex:2; padding:0 16px;">
+                            <div style="background:rgba(255,255,255,0.06); border-radius:3px; height:6px; width:100%;">
+                                <div class="bar-fill"
+                                     style="@($"width:{BarGenislik(s.OrtKatsayi)}%; background:{KatsayiRenk(s.OrtKatsayi)};")"></div>
+                            </div>
+                            <div style="font-size:0.6rem; color:rgba(255,255,255,0.25); margin-top:3px; text-align:center;">
+                                @BarEtiket(s.OrtKatsayi)
+                            </div>
+                        </div>
+
+                        @* En hızlı parça *@
+                        <div style="flex:2;">
+                            @if (s.EnHizliParca != null)
+                            {
+                                <div style="font-size:0.75rem; color:#4ade80; font-weight:700;">@s.EnHizliParca</div>
+                                <div style="font-size:0.65rem; color:rgba(255,255,255,0.3);">×@s.EnHizliKat.ToString("F2")</div>
+                            }
+                            else
+                            {
+                                <span style="color:rgba(255,255,255,0.2); font-size:0.75rem;">—</span>
+                            }
+                        </div>
+
+                        @* Gelişim gereken parça *@
+                        <div style="flex:2;">
+                            @if (s.EnYavasKat > 1.2 && s.EnYavasParca != null)
+                            {
+                                <div style="font-size:0.75rem; color:#f87171; font-weight:700;">@s.EnYavasParca</div>
+                                <div style="font-size:0.65rem; color:rgba(255,255,255,0.3);">×@s.EnYavasKat.ToString("F2")</div>
+                            }
+                            else
+                            {
+                                <span style="color:rgba(255,255,255,0.2); font-size:0.75rem;">—</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _yukleniyor = true;
+    private string _filtre = "90";
+    private int _toplamIs;
+    private double _ortKatsayi;
+    private int _hizliSayisi;
+    private int _yavasSayisi;
+    private List<PersonelSatir> _satirlar = new();
+
+    protected override async Task OnInitializedAsync() => await YukleAsync();
+
+    private async Task FiltreGuncelle(string yeni)
+    {
+        _filtre = yeni;
+        await YukleAsync();
+    }
+
+    private async Task YukleAsync()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+
+        var sorgu = ctx.BakimKontrolKayitlari
+            .Include(k => k.AtananPersonel)
+            .Include(k => k.ParcaSablonu)
+            .Where(k => k.Durum == "Tamamlandi"
+                     && k.GercekSureDk != null
+                     && k.AtananPersonelId != null
+                     && k.ParcaSablonu != null
+                     && k.ParcaSablonu.IslemSure > 0);
+
+        if (_filtre != "0")
+        {
+            var sinir = DateTime.UtcNow.AddDays(-int.Parse(_filtre));
+            sorgu = sorgu.Where(k => k.TamamlanmaTarihi >= sinir || k.IslemTarihi >= sinir);
+        }
+
+        var kayitlar = await sorgu.AsNoTracking().ToListAsync();
+
+        _toplamIs = kayitlar.Count;
+
+        var gruplanan = kayitlar
+            .GroupBy(k => k.AtananPersonel!)
+            .Select(g =>
+            {
+                var parcaGruplari = g
+                    .GroupBy(k => k.ParcaSablonu!.ParcaAdi)
+                    .Select(pg => new {
+                        Parca = pg.Key,
+                        Kat   = pg.Average(k => k.GercekSureDk!.Value / (double)k.ParcaSablonu!.IslemSure)
+                    })
+                    .OrderBy(x => x.Kat)
+                    .ToList();
+
+                var ortKat = g.Average(k => k.GercekSureDk!.Value / (double)k.ParcaSablonu!.IslemSure);
+                var ad     = g.Key.AdSoyad;
+                var parts  = ad.Split(' ');
+
+                return new PersonelSatir
+                {
+                    AdSoyad      = ad,
+                    SicilNo      = g.Key.SicilNo,
+                    Initials     = string.Concat(parts.Take(2).Select(p => p.Length > 0 ? p[0].ToString() : "")),
+                    IsCount      = g.Count(),
+                    OrtKatsayi   = ortKat,
+                    EnHizliParca = parcaGruplari.FirstOrDefault()?.Parca,
+                    EnHizliKat   = parcaGruplari.FirstOrDefault()?.Kat ?? 1.0,
+                    EnYavasParca = parcaGruplari.Count > 1 ? parcaGruplari.LastOrDefault()?.Parca : null,
+                    EnYavasKat   = parcaGruplari.LastOrDefault()?.Kat ?? 1.0
+                };
+            })
+            .ToList();
+
+        _satirlar     = gruplanan;
+        _ortKatsayi   = gruplanan.Any() ? gruplanan.Average(s => s.OrtKatsayi) : 1.0;
+        _hizliSayisi  = gruplanan.Count(s => s.OrtKatsayi < 0.90);
+        _yavasSayisi  = gruplanan.Count(s => s.OrtKatsayi > 1.30);
+
+        _yukleniyor = false;
+    }
+
+    private string KatsayiRenk(double k) => k < 0.90 ? "#4ade80" : k < 1.20 ? "#facc15" : "#f87171";
+    private string KatsayiChipClass(double k) => k < 0.90 ? "kat-chip-hizli" : k < 1.20 ? "kat-chip-normal" : "kat-chip-yavas";
+    private double BarGenislik(double k) => Math.Min(100, Math.Max(5, (2.0 - k) / 1.5 * 100));
+    private string BarEtiket(double k) => k < 0.90 ? "Standart altında süre" : k < 1.20 ? "Standart süre" : "Standart üstünde süre";
+
+    private class PersonelSatir
+    {
+        public string AdSoyad      { get; set; } = "";
+        public string SicilNo      { get; set; } = "";
+        public string Initials     { get; set; } = "";
+        public int    IsCount      { get; set; }
+        public double OrtKatsayi   { get; set; }
+        public string? EnHizliParca { get; set; }
+        public double EnHizliKat   { get; set; }
+        public string? EnYavasParca { get; set; }
+        public double EnYavasKat   { get; set; }
+        public bool Hover          { get; set; }
+    }
+}

@@ -1,0 +1,188 @@
+@using MudBlazor
+@using MroPlan.Models
+@using MroPlan.Models.Enums
+
+<MudDialog Style="border-radius:20px;overflow:hidden;">
+    <TitleContent>
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                    margin:-16px -24px 0;padding:22px 24px;
+                    display:flex;align-items:center;gap:16px; border-bottom: 1px solid rgba(250,204,21,0.2);">
+            <div style="width:52px;height:52px;background:rgba(255,255,255,.18);border-radius:14px;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;
+                        box-shadow:0 4px 12px rgba(0,0,0,.2);">
+                <MudIcon Icon="@(Personel.Id == 0 ? Icons.Material.Filled.PersonAdd : Icons.Material.Filled.ManageAccounts)"
+                         Style="font-size:28px;color:#FACC15;" />
+            </div>
+            <div>
+                <div style="font-size:18px;font-weight:900;color:white;letter-spacing:-.3px;">
+                    @(Personel.Id == 0 ? "Yeni Personel Ekle" : "Personel Düzenle")
+                </div>
+                <div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:4px;display:flex;align-items:center;gap:8px;">
+                    <span>Sicil No: <b style="color:white;">@Personel.SicilNo</b></span>
+                    @if (Personel.Id == 0)
+                    {
+                        <span style="background:rgba(250,204,21,.15);border-radius:5px;
+                                     padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.5px; color: #FACC15;">
+                            OTOMATİK
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_formIsValid" Class="pyd-form">
+            <MudGrid Spacing="3" Class="mt-2">
+
+                @* Durum + Atölye *@
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="PersonelDurumu" Label="Durum" @bind-Value="Personel.DurumEnum"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Circle"
+                               AdornmentColor="@GetDurumAdornmentColor(Personel.DurumEnum)">
+                        @foreach (PersonelDurumu item in Enum.GetValues(typeof(PersonelDurumu)))
+                        {
+                            <MudSelectItem Value="@item">@DurumAdi(item)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" Label="Çalıştığı Yer" Value="@Personel.CalistigiYer"
+                               ValueChanged="@OnCalistigiYerSecildi"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Factory">
+                        @foreach (var bg in BakimGruplari)
+                        {
+                            <MudSelectItem Value="@bg.GrupAdi">@bg.GrupAdi</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @* Ad + Soyad *@
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" Label="Ad" @bind-Value="Personel.Ad"
+                                  Required="true" RequiredError="Ad zorunludur"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" Label="Soyad" @bind-Value="Personel.Soyad"
+                                  Required="true" RequiredError="Soyad zorunludur"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person" />
+                </MudItem>
+
+                @* Ünvan *@
+                <MudItem xs="12">
+                    <MudSelect T="string" Label="Ünvan" @bind-Value="Personel.Unvan"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.WorkspacePremium">
+                        @foreach (var unvan in _unvanlar)
+                        {
+                            <MudSelectItem Value="@unvan">@unvan</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @* Atölye Kodu — otomatik, sadece okunabilir *@
+                @if (!string.IsNullOrEmpty(Personel.AtolyeKodu))
+                {
+                    <MudItem xs="12">
+                        <MudTextField T="string" Label="Atölye Kodu (Otomatik)" Value="@Personel.AtolyeKodu"
+                                      ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.QrCode"
+                                      Style="background: rgba(255,255,255,0.03);" />
+                    </MudItem>
+                }
+
+                @* İzin tarihleri — sadece İzinli durumunda *@
+                @if (Personel.DurumEnum == PersonelDurumu.Izinli)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudDatePicker Label="İzin Başlangıç" @bind-Date="Personel.IzinBaslangic"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                                       AdornmentIcon="@Icons.Material.Filled.CalendarToday" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudDatePicker Label="İzin Bitiş" @bind-Date="Personel.IzinBitis"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                                       AdornmentIcon="@Icons.Material.Filled.CalendarMonth" />
+                    </MudItem>
+                }
+
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text"
+                   Style="border-radius:10px;font-weight:700;color: rgba(255,255,255,0.5);padding:8px 20px;">
+            İptal
+        </MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(!_formIsValid)" StartIcon="@Icons.Material.Filled.Save"
+                   Style="border-radius:10px;font-weight:800;padding:8px 24px;box-shadow: 0 4px 14px rgba(250,204,21,0.2);">
+            KAYDET
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .pyd-form {
+        animation: pyd-in .28s cubic-bezier(.34, 1.56, .64, 1);
+    }
+    @@keyframes pyd-in {
+        from { opacity: 0; transform: translateY(16px); }
+        to   { opacity: 1; transform: translateY(0);    }
+    }
+</style>
+
+@code {
+    [CascadingParameter] MudBlazor.IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Personel Personel { get; set; } = new();
+    [Parameter] public List<BakimGrubu> BakimGruplari { get; set; } = new();
+
+    private MudForm _form = default!;
+    private bool _formIsValid;
+
+    private static readonly string[] _unvanlar =
+        ["İŞÇİ", "TEKNİSYEN", "UZMAN TEKNİSYEN", "ATÖLYE SORUMLUSU"];
+
+    private void OnCalistigiYerSecildi(string calistigiYer)
+    {
+        Personel.CalistigiYer = calistigiYer;
+        var bg = BakimGruplari.FirstOrDefault(b => b.GrupAdi == calistigiYer);
+        if (bg != null)
+            Personel.AtolyeKodu = bg.AtolyeKodu;
+    }
+
+    private static Color GetDurumAdornmentColor(PersonelDurumu d) => d switch
+    {
+        PersonelDurumu.Aktif    => Color.Success,
+        PersonelDurumu.Izinli   => Color.Warning,
+        PersonelDurumu.Egitimde => Color.Secondary,
+        PersonelDurumu.Gorevli  => Color.Info,
+        PersonelDurumu.Ayrildi  => Color.Error,
+        _                       => Color.Default
+    };
+
+    private static string DurumAdi(PersonelDurumu d) => d switch
+    {
+        PersonelDurumu.Aktif    => "Aktif",
+        PersonelDurumu.Izinli   => "İzinli",
+        PersonelDurumu.Egitimde => "Eğitimde",
+        PersonelDurumu.Gorevli  => "Görevli",
+        PersonelDurumu.Ayrildi  => "Ayrıldı",
+        _                       => d.ToString()
+    };
+
+    private async Task Submit()
+    {
+        await _form.ValidateAsync();
+        if (_formIsValid)
+            MudDialog.Close(DialogResult.Ok(Personel));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

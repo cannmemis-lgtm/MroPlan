@@ -1,0 +1,305 @@
+@inherits LayoutComponentBase
+@using MudBlazor
+@using MroPlan.Components.Layout
+@using MroPlan.Services
+@using MroPlan.Models
+@inject IBakimService BakimService
+@inject BildirimServisi BildirimServisi
+@inject IJSRuntime JS
+@implements IDisposable
+
+<MudThemeProvider Theme="MroTheme.DefaultTheme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<style>
+    @@MroTheme.CustomStyles
+
+    .cyber-drawer {
+        background: rgba(10, 15, 25, 0.9) !important;
+        backdrop-filter: blur(25px) !important;
+        border-right: 1px solid rgba(250, 204, 21, 0.1) !important;
+    }
+    .drawer-header {
+        height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 32px;
+        background: linear-gradient(to bottom, rgba(250, 204, 21, 0.05), transparent);
+    }
+    .nav-item-cyber {
+        margin: 4px 16px;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+    }
+    .nav-item-cyber:hover {
+        background: rgba(250, 204, 21, 0.08) !important;
+        transform: translateX(5px);
+    }
+    .nav-item-active {
+        background: rgba(250, 204, 21, 0.15) !important;
+        border: 1px solid rgba(250, 204, 21, 0.3);
+    }
+    .bildirim-panel {
+        width: 380px;
+        max-height: 520px;
+        overflow-y: auto;
+        background: rgba(10,15,25,0.98);
+        border: 1px solid rgba(250,204,21,0.15);
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+    .bildirim-item {
+        padding: 12px 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        transition: background 0.2s;
+        cursor: default;
+    }
+    .bildirim-item:hover { background: rgba(255,255,255,0.03); }
+    .bildirim-item.okunmamis { border-left: 3px solid #facc15; }
+</style>
+
+<MudLayout>
+    <MudAppBar Elevation="0" Class="glass-nav mt-3 px-6" Fixed="true"
+               Style="height: 64px; width: calc(100% - 48px); margin: 0 24px; border-radius: 16px; z-index: 1300;">
+        <MudIconButton Icon="@Icons.Material.Rounded.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       OnClick="@(() => _drawerOpen = !_drawerOpen)" Class="mr-4" />
+
+        <div class="d-flex align-center" style="gap: 14px;">
+            <div class="military-badge">5. ABFM</div>
+            <MudText Typo="Typo.h6" Style="font-weight: 900; letter-spacing: -0.5px;">
+                <span class="glow-text">MRO</span><span style="color: #FACC15; text-shadow: 0 0 25px rgba(250,204,21,0.5);">PRO</span>
+            </MudText>
+        </div>
+
+        <MudSpacer />
+
+        <div class="d-flex align-center" style="gap: 12px;">
+
+            @* ─── ZİL İKONU + POPOVER ─── *@
+            <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                     Dense="true" PopoverClass="bildirim-panel"
+                     @bind-Open="_menuOpen">
+                <ActivatorContent>
+                    <MudBadge Content="@BildirimServisi.OkunmamisSayisi"
+                              Color="Color.Error" Overlap="true"
+                              Visible="@(BildirimServisi.OkunmamisSayisi > 0)">
+                        <MudIconButton Icon="@Icons.Material.Rounded.Notifications"
+                                       Color="Color.Inherit" Size="Size.Small" />
+                    </MudBadge>
+                </ActivatorContent>
+                <ChildContent>
+                    @* Panel başlığı *@
+                    <div class="d-flex align-center justify-space-between pa-4"
+                         style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:900; color:#facc15;">BİLDİRİMLER</MudText>
+                        <div class="d-flex gap-2">
+                            @if (BildirimServisi.OkunmamisSayisi > 0)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           Style="font-size:0.7rem; color:rgba(255,255,255,0.4);"
+                                           OnClick="TumunuOku">Tümünü Oku</MudButton>
+                            }
+                            @if (BildirimServisi.Tumü.Any())
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text"
+                                           Style="font-size:0.7rem; color:rgba(255,255,255,0.4);"
+                                           OnClick="Temizle">Temizle</MudButton>
+                            }
+                        </div>
+                    </div>
+
+                    @* İzin butonu *@
+                    @if (_browserIzin != "granted")
+                    {
+                        <div class="pa-3" style="background:rgba(250,204,21,0.05); border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <div class="d-flex align-center gap-3">
+                                <MudIcon Icon="@Icons.Material.Filled.NotificationsActive" Size="Size.Small" Color="Color.Warning" />
+                                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.6); flex:1;">
+                                    Tarayıcı bildirimleri için izin verin
+                                </MudText>
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                                           Style="font-size:0.65rem; font-weight:900;"
+                                           OnClick="BrowserIzinIste">İzin Ver</MudButton>
+                            </div>
+                        </div>
+                    }
+
+                    @* Bildirim listesi *@
+                    @if (!BildirimServisi.Tumü.Any())
+                    {
+                        <div class="d-flex flex-column align-center justify-center pa-10" style="opacity:0.3;">
+                            <MudIcon Icon="@Icons.Material.Filled.NotificationsNone" Size="Size.Large" />
+                            <MudText Typo="Typo.caption" Class="mt-2" Style="font-weight:700;">Bildirim yok</MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var b in BildirimServisi.Tumü.Take(30))
+                        {
+                            <div class="bildirim-item @(b.Okundu ? "" : "okunmamis")">
+                                <div class="d-flex align-center gap-3">
+                                    <div style="width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+                                         background:@BildirimRenkArka(b.Seviye);">
+                                        <MudIcon Icon="@BildirimIkon(b.Turu)" Size="Size.Small" Style="@($"color:{BildirimRenkOn(b.Seviye)};font-size:1rem;")" />
+                                    </div>
+                                    <div class="flex-1" style="min-width:0;">
+                                        <div style="font-size:0.78rem; font-weight:800; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">@b.Baslik</div>
+                                        <div style="font-size:0.7rem; color:rgba(255,255,255,0.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">@b.Mesaj</div>
+                                    </div>
+                                    <div style="font-size:0.6rem; color:rgba(255,255,255,0.25); white-space:nowrap; flex-shrink:0;">
+                                        @b.Tarih.ToLocalTime().ToString("HH:mm")
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </ChildContent>
+            </MudMenu>
+
+            <div style="width: 1px; height: 28px; background: rgba(255,255,255,0.08); margin: 0 4px;"></div>
+
+            <div class="d-flex align-center" style="gap: 10px;">
+                <MudAvatar Size="Size.Small" Style="background: linear-gradient(135deg, #FACC15, #D97706); color: black; font-weight: 800; font-size: 0.7rem;">CB</MudAvatar>
+                <div class="d-flex flex-column" style="line-height: 1.2;">
+                    <MudText Typo="Typo.body2" Style="color: white; font-weight: 700; font-size: 0.8rem;">Can Bey</MudText>
+                    <MudText Typo="Typo.caption" Style="color: #71717A; font-weight: 600; font-size: 0.65rem;">ADMIN</MudText>
+                </div>
+            </div>
+        </div>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="0" Variant="@DrawerVariant.Temporary" Class="cyber-drawer" Width="320px">
+        <div class="drawer-header">
+            <MudText Typo="Typo.h5" Style="font-weight: 900; color: #FACC15;">ANA MENÜ</MudText>
+            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.3); font-weight: 700; letter-spacing: 1px;">KONTROL MERKEZİ</MudText>
+        </div>
+        <MudNavMenu Class="mt-4">
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Rounded.SpaceDashboard" Class="nav-item-cyber">DASHBOARD</MudNavLink>
+            <MudNavLink Href="/personel-yonetimi" Icon="@Icons.Material.Rounded.Groups" Class="nav-item-cyber">PERSONEL SİCİL</MudNavLink>
+            <MudNavLink Href="/yetkinlik" Icon="@Icons.Material.Rounded.MilitaryTech" Class="nav-item-cyber">YETKİNLİK MATRİSİ</MudNavLink>
+
+            <MudNavLink Href="/bakim-kabul" Icon="@Icons.Material.Rounded.FlightTakeoff" Class="nav-item-cyber">KABUL İŞLEMLERİ</MudNavLink>
+            <MudNavLink Href="/is-emri-dagitim" Icon="@Icons.Material.Rounded.Assignment" Class="nav-item-cyber">İŞ EMRİ DAĞITIM</MudNavLink>
+            <MudNavLink Href="/atolye-operasyon" Icon="@Icons.Material.Rounded.BuildCircle" Class="nav-item-cyber">ATÖLYE PANELİ</MudNavLink>
+            <MudNavLink Href="/helikopter-gorseli" Icon="@Icons.Material.Rounded.Flight" Class="nav-item-cyber">DİNAMİK GÖRSEL</MudNavLink>
+            <MudNavLink Href="/zaman-cizelgesi" Icon="@Icons.Material.Rounded.CalendarViewWeek" Class="nav-item-cyber">ZAMAN ÇİZELGESİ</MudNavLink>
+            <MudNavLink Href="/performans-analizi" Icon="@Icons.Material.Rounded.Analytics" Class="nav-item-cyber">PERFORMANS ANALİZİ</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent Style="padding-top: 80px !important;">
+        <div class="animate-fade-in" style="width: 100%; min-height: calc(100vh - 80px);">
+            @Body
+        </div>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = false;
+    private string _browserIzin = "default";
+    private bool _menuOpenValue;
+    private bool _menuOpen
+    {
+        get => _menuOpenValue;
+        set
+        {
+            if (_menuOpenValue != value)
+            {
+                _menuOpenValue = value;
+                if (_menuOpenValue) ZilAcildi();
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        BildirimServisi.YeniBildirim += YeniBildirimGeldi;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _browserIzin = await JS.InvokeAsync<string>("bildirimler.izinDurumu");
+                StateHasChanged();
+            }
+            catch { }
+        }
+    }
+
+    private void YeniBildirimGeldi(Bildirim b)
+    {
+        // UI thread'e dön ve browser push gönder
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            try
+            {
+                if (_browserIzin == "granted")
+                    await JS.InvokeVoidAsync("bildirimler.goster", b.Baslik, b.Mesaj, b.Turu.ToString());
+            }
+            catch { }
+        });
+    }
+
+    private async Task BrowserIzinIste()
+    {
+        try
+        {
+            _browserIzin = await JS.InvokeAsync<string>("bildirimler.izinIste");
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private void ZilAcildi()
+    {
+        // Panel açıldığında okundu işaretle
+        BildirimServisi.TumunuOkunduIsaretle();
+        StateHasChanged();
+    }
+
+    private void TumunuOku()
+    {
+        BildirimServisi.TumunuOkunduIsaretle();
+        StateHasChanged();
+    }
+
+    private void Temizle()
+    {
+        BildirimServisi.Temizle();
+        StateHasChanged();
+    }
+
+    private string BildirimIkon(BildirimTuru t) => t switch
+    {
+        BildirimTuru.Atama         => Icons.Material.Filled.AssignmentInd,
+        BildirimTuru.Gecikme       => Icons.Material.Filled.AccessTime,
+        BildirimTuru.KapasiteAsimi => Icons.Material.Filled.Warning,
+        _                          => Icons.Material.Filled.Info
+    };
+
+    private string BildirimRenkArka(BildirimSeviye s) => s switch
+    {
+        BildirimSeviye.Kritik => "rgba(239,68,68,0.15)",
+        BildirimSeviye.Uyari  => "rgba(250,204,21,0.12)",
+        _                      => "rgba(56,189,248,0.12)"
+    };
+
+    private string BildirimRenkOn(BildirimSeviye s) => s switch
+    {
+        BildirimSeviye.Kritik => "#f87171",
+        BildirimSeviye.Uyari  => "#facc15",
+        _                      => "#38bdf8"
+    };
+
+    public void Dispose()
+    {
+        BildirimServisi.YeniBildirim -= YeniBildirimGeldi;
+    }
+}
