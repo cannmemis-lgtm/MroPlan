@@ -738,8 +738,14 @@ namespace MroPlan.Services
             await using var ctx = await factory.CreateDbContextAsync();
             int kayitSayisi = 0;
 
+            // Aynı (PersonelId, EgitimModuluId) çiftini bu batch içinde tekrar eklememek için
+            var islenenler = new HashSet<(int, int)>();
+
             foreach (var (personelId, egitimModuluId) in atamalar)
             {
+                // Bu batch içinde zaten işlendiyse atla
+                if (!islenenler.Add((personelId, egitimModuluId))) continue;
+
                 var zatenVar = await ctx.PersonelEgitimleri
                     .AnyAsync(pe => pe.PersonelId == personelId && pe.EgitimModuluId == egitimModuluId);
                 if (zatenVar) continue;
