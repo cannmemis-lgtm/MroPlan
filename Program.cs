@@ -28,6 +28,7 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 builder.Services.AddScoped<IPersonelService, PersonelService>();
 builder.Services.AddScoped<IBakimService, BakimService>();
 builder.Services.AddScoped<IYetkinlikService, YetkinlikService>();
+builder.Services.AddScoped<IYillikPlanlamaService, YillikPlanlamaService>();
 
 // Bildirim sistemi
 builder.Services.AddSingleton<MroPlan.Services.BildirimServisi>();
@@ -51,8 +52,13 @@ builder.Services.AddHttpClient<MroPlan.Services.GeminiService>(c =>
 
 var app = builder.Build();
 
-
-
+// Otomatik migration — uygulama başladığında bekleyen migration'ları uygula
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+    await using var db = await dbFactory.CreateDbContextAsync();
+    await db.Database.MigrateAsync();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

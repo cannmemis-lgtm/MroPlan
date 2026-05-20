@@ -194,7 +194,7 @@
                     <div class="hg-detail-badge @GetStatusBadgeClass(_seciliNode.Durum)">@(_seciliNode.Durum ?? "HAZIR")</div>
                     @if (_seciliPlanId > 0)
                     {
-                        <div class="hg-nav-link" @onclick='() => Nav.NavigateTo($"/atolye-operasyon")'>
+                        <div class="hg-nav-link" @onclick='() => Nav.NavigateTo($"/atolye-operasyon?planId={_seciliPlanId}")'>
                             Atölye'de Görüntüle →
                         </div>
                     }

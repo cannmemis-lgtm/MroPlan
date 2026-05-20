@@ -1,3 +1,4 @@
+#nullable enable
 using MroPlan.Models;
 
 namespace MroPlan.Services

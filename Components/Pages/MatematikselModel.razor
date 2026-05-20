@@ -1,0 +1,356 @@
+@page "/model"
+@using MroPlan.Services
+@using MroPlan.Models.Enums
+@inject IYillikPlanlamaService PlanlamaService
+@inject NavigationManager Nav
+
+<PageTitle>Matematiksel Model</PageTitle>
+
+<div class="pa-6">
+    <div class="d-flex align-center justify-space-between mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Style="font-weight:900; color:#FACC15; letter-spacing:-1px;">MATEMATİKSEL OPTİMİZASYON MODELİ</MudText>
+            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.4);">Yetkinlik kısıtlı ILP personel-görev atama — tez §3.2</MudText>
+        </div>
+    </div>
+
+    @if (_yukleniyor)
+    {
+        <div class="d-flex justify-center align-center" style="height:400px;">
+            <div class="d-flex flex-column align-center gap-4">
+                <MudProgressCircular Color="Color.Warning" Indeterminate="true" Size="Size.Large" />
+                <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.4); font-weight:700;">Model çözülüyor...</MudText>
+            </div>
+        </div>
+    }
+    else if (_sonuc != null)
+    {
+        @* ── KPI Şeridi ───────────────────────────────────────────────────── *@
+        <MudGrid Class="mb-6" Spacing="3">
+            <MudItem xs="6" sm="2">
+                <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(250,204,21,0.08); border:1px solid rgba(250,204,21,0.2);">
+                    <MudText Style="font-size:1.8rem; font-weight:900; color:#FACC15; line-height:1;">@_sonuc.AktifPersonelSayisi</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.5px;">|I| personel</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2);">
+                    <MudText Style="font-size:1.8rem; font-weight:900; color:#38bdf8; line-height:1;">@_sonuc.BekleyenGorevSayisi</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.5px;">|J| görev</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.2);">
+                    <MudText Style="font-size:1.8rem; font-weight:900; color:#4ade80; line-height:1;">@_sonuc.AtananGorev</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.5px;">atanan</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2);">
+                    <MudText Style="font-size:1.8rem; font-weight:900; color:#f87171; line-height:1;">@_sonuc.AtanamayaGorev</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.5px;">atanamayan</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(139,92,246,0.08); border:1px solid rgba(139,92,246,0.2);">
+                    <MudText Style="font-size:1.8rem; font-weight:900; color:#a78bfa; line-height:1;">@_sonuc.HedefFonksiyonZ</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.5px;">Z değeri</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudPaper Class="pa-4 rounded-xl text-center" Style="@($"background:rgba({OranRenk(_sonuc.OptimallikSkoru)},0.08); border:1px solid rgba({OranRenk(_sonuc.OptimallikSkoru)},0.2);")">
+                    <MudText Style="@($"font-size:1.8rem; font-weight:900; color:rgb({OranRenk(_sonuc.OptimallikSkoru)}); line-height:1;")">
+                        @(_sonuc.BekleyenGorevSayisi == 0 ? "—" : $"%{_sonuc.OptimallikSkoru}")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.5px;">optimallik</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid Spacing="4">
+            @* ── Sol: Formülasyon (değişmez) ─────────────────────────────── *@
+            <MudItem xs="12" md="5">
+                <MudPaper Class="pa-6 mb-4 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(250,204,21,0.15);">
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:#FACC15; margin-bottom:16px;">KARAR DEĞİŞKENLERİ</MudText>
+                    <div style="font-family:monospace; color:rgba(255,255,255,0.85); line-height:2.2; font-size:0.88rem;">
+                        <div><span style="color:#38bdf8;">x</span><sub>ij</sub> ∈ {"{0,1}"} &nbsp; personel i, görev j'ye atanmış mı?</div>
+                        <div><span style="color:#f87171;">y</span><sub>j</sub> ∈ {"{0,1}"} &nbsp; görev j atanamadı mı? (ceza değişkeni)</div>
+                    </div>
+
+                    <MudDivider Style="border-color:rgba(255,255,255,0.08); margin:14px 0;" />
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:#FACC15; margin-bottom:10px;">AMAÇ FONKSİYONU</MudText>
+                    <div style="font-family:monospace; color:rgba(255,255,255,0.85); line-height:2.2; font-size:0.86rem;">
+                        <div>min Z = M·Σ<sub>j</sub> y<sub>j</sub> + Σ<sub>i</sub>Σ<sub>j</sub> (5−SV<sub>ij</sub>)·x<sub>ij</sub></div>
+                        <div style="color:rgba(255,255,255,0.35); font-size:0.75rem;">M=1000 (büyük ceza), SV∈[1..5] (CBTA ölçeği)</div>
+                    </div>
+
+                    <MudDivider Style="border-color:rgba(255,255,255,0.08); margin:14px 0;" />
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:#FACC15; margin-bottom:10px;">KISITLAR</MudText>
+                    <div style="font-family:monospace; color:rgba(255,255,255,0.85); line-height:2.3; font-size:0.84rem;">
+                        <div><span style="color:#FACC15; font-weight:900;">(K1)</span> Σ<sub>i</sub> x<sub>ij</sub> + y<sub>j</sub> ≥ 1 &nbsp;∀j &nbsp;<span style="color:rgba(255,255,255,0.3); font-size:0.73rem;">her görev kapsanmalı</span></div>
+                        <div><span style="color:#FACC15; font-weight:900;">(K2)</span> SV<sub>ij</sub> ≥ SV<sup>min</sup><sub>j</sub>·x<sub>ij</sub> &nbsp;∀i,j &nbsp;<span style="color:rgba(255,255,255,0.3); font-size:0.73rem;">yetkinlik kısıtı</span></div>
+                        <div><span style="color:#FACC15; font-weight:900;">(K3)</span> Σ<sub>j</sub> d<sub>j</sub>·x<sub>ij</sub> ≤ C<sub>i</sub> &nbsp;∀i &nbsp;<span style="color:rgba(255,255,255,0.3); font-size:0.73rem;">kapasite kısıtı</span></div>
+                        <div><span style="color:#FACC15; font-weight:900;">(K4)</span> x<sub>ij</sub>, y<sub>j</sub> ∈ {"{0,1}"} &nbsp;&nbsp;<span style="color:rgba(255,255,255,0.3); font-size:0.73rem;">tamsayı kısıtı</span></div>
+                    </div>
+                </MudPaper>
+
+                @* Kısıt Doğrulama *@
+                <MudPaper Class="pa-5 mb-4 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06);">
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:14px;">KISIT DOĞRULAMA</MudText>
+                    @foreach (var k in _sonuc.KisitDogrulamalari)
+                    {
+                        <div class="d-flex align-center gap-3 mb-3">
+                            <div style="width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+                                        background:@(k.Saglandi ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)");
+                                        border:1px solid @(k.Saglandi ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)");">
+                                <MudIcon Icon="@(k.Saglandi ? Icons.Material.Rounded.Check : Icons.Material.Rounded.Close)"
+                                         Style="@($"color:{(k.Saglandi ? "#4ade80" : "#f87171")}; font-size:1rem;")" />
+                            </div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="font-size:0.82rem; font-weight:900; color:white;">@k.KisitAdi &nbsp;<span style="font-weight:400; color:rgba(255,255,255,0.5); font-size:0.75rem;">@k.Aciklama</span></div>
+                                <div style="font-size:0.72rem; color:@(k.Saglandi ? "#4ade80" : "#f87171"); font-weight:700;">@k.Detay</div>
+                            </div>
+                        </div>
+                    }
+                </MudPaper>
+
+                @* Çözüm Yöntemi *@
+                <MudPaper Class="pa-5 mb-4 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(56,189,248,0.15);">
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:#38bdf8; margin-bottom:12px;">ÇÖZÜM YÖNTEMİ (§3.3)</MudText>
+                    <div style="font-size:0.8rem; color:rgba(255,255,255,0.65); line-height:1.9;">
+                        <div class="mb-2">ILP NP-hard olduğundan <span style="color:#FACC15; font-weight:700;">greedy + dinamik ceza</span> heuristiği uygulanır:</div>
+                        <div class="d-flex align-start gap-2 mb-1">
+                            <span style="color:#FACC15; font-weight:900; flex-shrink:0;">1.</span>
+                            <span>Görevler SV<sup>min</sup> ↓ ve d<sub>j</sub> ↓ sırasıyla işlenir <span style="color:rgba(255,255,255,0.35);">(en kısıtlı önce)</span></span>
+                        </div>
+                        <div class="d-flex align-start gap-2 mb-1">
+                            <span style="color:#FACC15; font-weight:900; flex-shrink:0;">2.</span>
+                            <span>K2 + K3 sağlayan adaylar: <span style="font-family:monospace; color:#38bdf8;">w<sub>i</sub> = toplamYük<sub>i</sub></span> artan sırada seçilir <span style="color:rgba(255,255,255,0.35);">(adil dağılım)</span></span>
+                        </div>
+                        <div class="d-flex align-start gap-2 mb-1">
+                            <span style="color:#FACC15; font-weight:900; flex-shrink:0;">3.</span>
+                            <span>Eşit yükte SV fazlası tiebreaker: <span style="font-family:monospace; color:#38bdf8;">SV<sub>ij</sub> − SV<sup>min</sup><sub>j</sub></span> ↑ <span style="color:rgba(255,255,255,0.35);">(israf önlenir)</span></span>
+                        </div>
+                        <div class="d-flex align-start gap-2">
+                            <span style="color:#FACC15; font-weight:900; flex-shrink:0;">4.</span>
+                            <span>Yorulma katsayısı <span style="font-family:monospace; color:#38bdf8;">η<sub>i</sub> = yük<sub>i</sub>/C<sub>i</sub></span> Z'ye dinamik ceza ekler: <span style="font-family:monospace; color:#a78bfa;">+⌊η·3⌋</span></span>
+                        </div>
+                    </div>
+                </MudPaper>
+
+                @* Gerçek Parametre Tablosu *@
+                <MudPaper Class="pa-5 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06);">
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:12px;">MODEL PARAMETRELERİ (GERÇEK)</MudText>
+                    <MudTable Items="_gercekParametreler" Dense="true" Style="background:transparent;">
+                        <HeaderContent>
+                            <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">SİMGE</MudTh>
+                            <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">TANIM</MudTh>
+                            <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">DEĞER</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd Style="font-family:monospace; color:#FACC15; font-weight:700; font-size:0.82rem;">@context.Sembol</MudTd>
+                            <MudTd Style="color:rgba(255,255,255,0.6); font-size:0.78rem;">@context.Tanim</MudTd>
+                            <MudTd Style="color:#38bdf8; font-weight:700; font-size:0.82rem;">@context.Deger</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudPaper>
+            </MudItem>
+
+            @* ── Sağ: Gerçek Sonuçlar ────────────────────────────────────── *@
+            <MudItem xs="12" md="7">
+
+                @* Atama Matrisi *@
+                @if (_sonuc.AtamaDetaylari.Any())
+                {
+                    <MudPaper Class="pa-5 mb-4 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(34,197,94,0.15);">
+                        <div class="d-flex align-center justify-space-between mb-3">
+                            <MudText Typo="Typo.h6" Style="font-weight:900; color:#4ade80;">ATAMA MATRİSİ</MudText>
+                            <MudChip T="string" Size="Size.Small" Style="background:rgba(34,197,94,0.15); color:#4ade80; font-weight:900;">@_sonuc.AtananGorev atama</MudChip>
+                        </div>
+                        <MudTable Items="_sonuc.AtamaDetaylari" Dense="true" Hover="true" Style="background:transparent;"
+                                  RowStyle="border-bottom:1px solid rgba(255,255,255,0.04);">
+                            <HeaderContent>
+                                <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">PERSONEL</MudTh>
+                                <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">GÖREV / TİP</MudTh>
+                                <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">SV (K2)</MudTh>
+                                <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">SÜRE (K3)</MudTh>
+                                <MudTh Style="color:rgba(255,255,255,0.35); font-size:0.68rem; font-weight:900;">Z KATKI</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>
+                                    <div style="font-size:0.78rem; font-weight:700; color:white;">@context.PersonelAdi</div>
+                                    <div style="font-size:0.65rem; color:rgba(255,255,255,0.3);">@context.SicilNo</div>
+                                </MudTd>
+                                <MudTd>
+                                    <div style="font-size:0.78rem; font-weight:600; color:rgba(255,255,255,0.8);">@context.ParcaAdi</div>
+                                    <div style="font-size:0.65rem; color:rgba(255,255,255,0.3);">@context.HeliTipi</div>
+                                </MudTd>
+                                <MudTd>
+                                    <div class="d-flex align-center gap-1">
+                                        <span style="font-weight:900; color:#FACC15; font-size:0.82rem;">SV@context.AtananSv</span>
+                                        <span style="color:rgba(255,255,255,0.3); font-size:0.72rem;">≥SV@context.GerekliSv</span>
+                                        <MudIcon Icon="@Icons.Material.Rounded.Check" Style="color:#4ade80; font-size:0.85rem;" />
+                                    </div>
+                                </MudTd>
+                                <MudTd>
+                                    <div style="font-size:0.78rem; font-weight:700; color:rgba(255,255,255,0.7);">@context.IslemSureDk dk</div>
+                                    <div class="d-flex align-center gap-1">
+                                        <MudProgressLinear Value="@(Math.Min(context.ToplamYukDk * 100.0 / context.Kapasite, 100))"
+                                                           Color="@(context.K3Saglandi ? Color.Success : Color.Error)"
+                                                           Style="height:4px; width:60px;" Class="rounded" />
+                                        <MudIcon Icon="@(context.K3Saglandi ? Icons.Material.Rounded.Check : Icons.Material.Rounded.Warning)"
+                                                 Style="@($"color:{(context.K3Saglandi ? "#4ade80" : "#f87171")}; font-size:0.85rem;")" />
+                                    </div>
+                                </MudTd>
+                                <MudTd Style="font-weight:900; color:#a78bfa; font-size:0.82rem;">+@context.ZKatkisi</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudPaper>
+                }
+
+                @* Atanamayan Görevler *@
+                @if (_sonuc.Atanamayalar.Any())
+                {
+                    <MudPaper Class="pa-5 mb-4 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(239,68,68,0.2);">
+                        <div class="d-flex align-center justify-space-between mb-3">
+                            <MudText Typo="Typo.h6" Style="font-weight:900; color:#f87171;">ATANAMAYAN GÖREVLER</MudText>
+                            <MudChip T="string" Size="Size.Small" Style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:900;">M×@_sonuc.AtanamayaGorev ceza</MudChip>
+                        </div>
+                        @foreach (var a in _sonuc.Atanamayalar)
+                        {
+                            <div class="d-flex align-center gap-3 mb-2" style="padding:10px; background:rgba(239,68,68,0.06); border-radius:10px; border:1px solid rgba(239,68,68,0.12);">
+                                <MudIcon Icon="@Icons.Material.Rounded.ErrorOutline" Style="color:#f87171; flex-shrink:0;" />
+                                <div style="flex:1; min-width:0;">
+                                    <div style="font-size:0.8rem; font-weight:700; color:white;">@a.ParcaAdi &nbsp;<span style="color:rgba(255,255,255,0.3); font-weight:400; font-size:0.72rem;">@a.HeliTipi</span></div>
+                                    <div style="font-size:0.72rem; color:#f87171; font-weight:700;">@a.Neden</div>
+                                </div>
+                                <div style="text-align:right; flex-shrink:0;">
+                                    <div style="font-size:0.7rem; color:rgba(255,255,255,0.3);">gerekli / mevcut</div>
+                                    <div style="font-size:0.82rem; font-weight:900; color:#FACC15;">SV@(a.GerekliSv) / SV@(a.MevcutMaxSv)</div>
+                                </div>
+                            </div>
+                        }
+                    </MudPaper>
+                }
+
+                @* Personel Yük Dağılımı *@
+                @if (_sonuc.PersonelYukleri.Any())
+                {
+                    <MudPaper Class="pa-5 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(56,189,248,0.15);">
+                        <MudText Typo="Typo.h6" Style="font-weight:900; color:#38bdf8; margin-bottom:16px;">KİŞİ BAZLI YÜK DAĞILIMI</MudText>
+                        @foreach (var p in _sonuc.PersonelYukleri)
+                        {
+                            <div class="mb-3">
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <div class="d-flex align-center gap-2">
+                                        <MudAvatar Size="Size.Small" Style="background:rgba(250,204,21,0.2); color:#FACC15; font-size:0.6rem; font-weight:900; width:28px; height:28px;">
+                                            @(p.PersonelAdi.Length > 0 ? p.PersonelAdi[0].ToString() : "?")
+                                        </MudAvatar>
+                                        <div>
+                                            <span style="font-size:0.8rem; font-weight:700; color:white;">@p.PersonelAdi</span>
+                                            <span style="font-size:0.65rem; color:rgba(255,255,255,0.3); margin-left:6px;">@p.SicilNo</span>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-center gap-2">
+                                        <span style="font-size:0.72rem; color:rgba(255,255,255,0.4);">@p.ToplamYukDk/@p.KapasiteDk dk</span>
+                                        <span style="font-size:0.78rem; font-weight:900; color:@YukRenk(p.KullanımYuzdesi);">%@p.KullanımYuzdesi</span>
+                                    </div>
+                                </div>
+                                <MudProgressLinear Value="@(Math.Min(p.KullanımYuzdesi, 100))"
+                                                   Color="@(p.KullanımYuzdesi > 90 ? Color.Error : p.KullanımYuzdesi > 60 ? Color.Warning : Color.Info)"
+                                                   Class="rounded" Style="height:8px;" />
+                            </div>
+                        }
+                    </MudPaper>
+                }
+
+                @* Boş durum *@
+                @if (!_sonuc.AtamaDetaylari.Any() && !_sonuc.Atanamayalar.Any())
+                {
+                    <MudPaper Class="pa-8 rounded-xl d-flex flex-column align-center justify-center" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06); opacity:0.6;">
+                        <MudIcon Icon="@Icons.Material.Rounded.Inbox" Style="font-size:3.5rem; color:rgba(255,255,255,0.2);" />
+                        <MudText Typo="Typo.h6" Style="font-weight:700; margin-top:12px; color:rgba(255,255,255,0.4);">Bekleyen iş emri yok</MudText>
+                        <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.25); text-align:center; margin-top:6px;">Model çalıştı ancak optimize edilecek bekleyen görev bulunamadı.</MudText>
+                    </MudPaper>
+                }
+            </MudItem>
+        </MudGrid>
+
+        @* ── Alt: Depo Seviyesi Tablosu ────────────────────────────────────── *@
+        <MudPaper Class="pa-6 mt-4 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06);">
+            <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:16px;">DEPO SEVİYESİ YETKİNLİK GEREKSİNİMLERİ (MIL-STD-1388)</MudText>
+            <MudTable Items="_seviyeler" Dense="true" Hover="true" Style="background:transparent;">
+                <HeaderContent>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-size:0.7rem;">SEVİYE</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-size:0.7rem;">TANIM</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-size:0.7rem;">MIN YETKİNLİK</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-size:0.7rem;">ÖRNEK GÖREV</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-size:0.7rem;">STANDART</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="@($"background:rgba({context.Renk},0.15); color:rgb({context.Renk}); font-weight:900; font-size:0.7rem;")">
+                            @context.Seviye
+                        </MudChip>
+                    </MudTd>
+                    <MudTd Style="color:rgba(255,255,255,0.7); font-size:0.82rem;">@context.Tanim</MudTd>
+                    <MudTd Style="color:#FACC15; font-weight:900;">SV @context.MinSv+</MudTd>
+                    <MudTd Style="color:rgba(255,255,255,0.6); font-size:0.78rem;">@context.Ornek</MudTd>
+                    <MudTd Style="color:#38bdf8; font-size:0.75rem; font-weight:700;">@context.Standart</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private bool _yukleniyor = true;
+    private OptimizasyonSonuc? _sonuc;
+
+    private record ModelParametreGercek(string Sembol, string Tanim, string Deger);
+    private record SeviyeInfo(string Seviye, string Tanim, int MinSv, string Ornek, string Standart, string Renk);
+
+    private List<ModelParametreGercek> _gercekParametreler = [];
+
+    private List<SeviyeInfo> _seviyeler =
+    [
+        new("O-Level", "Operasyonel — uçuş hattı", 1, "Yağ/akıcı kontrol, rutin denetim", "ATA iSpec 2200",    "56,189,248"),
+        new("I-Level", "Ara kademe — atölye onarımı", 2, "LRU değişimi, fonksiyonel test", "EASA Part-145",     "250,204,21"),
+        new("D-Level", "Depo — komple revizyon",      3, "Motor OH, gövde ağır bakım",      "MIL-STD-1388-1A",  "239,68,68")
+    ];
+
+    protected override async Task OnInitializedAsync() => await YukleAsync();
+
+    private async Task YukleAsync()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+        _sonuc = await PlanlamaService.PersonelAtamaOptimizeEtAsync(0);
+        _gercekParametreler =
+        [
+            new("I",          "Personel kümesi |I|",               $"{_sonuc.AktifPersonelSayisi} aktif personel"),
+            new("J",          "Görev kümesi |J|",                  $"{_sonuc.BekleyenGorevSayisi} bekleyen iş emri"),
+            new("SV_ij",      "Yetkinlik seviyesi (CBTA ölçeği)",  "1..5"),
+            new("SV^min_j",   "Min. yetkinlik (görev bazlı)",      SvMinMaxStr(_sonuc)),
+            new("d_j",        "Görev süresi (ParcaSablonu)",       _sonuc.AtamaDetaylari.Any()
+                                                                    ? $"{_sonuc.AtamaDetaylari.Min(a=>a.IslemSureDk)}..{_sonuc.AtamaDetaylari.Max(a=>a.IslemSureDk)} dk"
+                                                                    : "—"),
+            new("C_i",        "Planlama ufku kapasitesi",           $"{_sonuc.AtamaDetaylari.FirstOrDefault()?.Kapasite ?? 408} dk/personel"),
+            new("M",          "Büyük ceza sabiti",                  "1000"),
+            new("Z*",         "Optimal hedef fonksiyon değeri",    _sonuc.HedefFonksiyonZ.ToString("F0")),
+        ];
+        _yukleniyor = false;
+    }
+
+    private string OranRenk(double oran) => oran >= 90 ? "34,197,94" : oran >= 60 ? "250,204,21" : "239,68,68";
+    private string YukRenk(double yuzde) => yuzde > 90 ? "#f87171" : yuzde > 60 ? "#facc15" : "#38bdf8";
+
+    private static string SvMinMaxStr(OptimizasyonSonuc s)
+    {
+        var tumSvler = s.AtamaDetaylari.Select(a => a.GerekliSv)
+            .Concat(s.Atanamayalar.Select(a => a.GerekliSv))
+            .ToList();
+        return tumSvler.Count > 0 ? $"SV{tumSvler.Min()}..SV{tumSvler.Max()}" : "—";
+    }
+}

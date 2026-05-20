@@ -1,3 +1,4 @@
+#nullable enable
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -28,6 +29,8 @@ namespace MroPlan.Models
         public DateTime TamamlanmaTarihi { get; set; } = DateTime.UtcNow;
         public bool Tamamlandi { get; set; } = false;
         public int IlerlemeYuzdesi { get; set; } = 0;
+        public DateTime? PlanlananBaslangic { get; set; }
+        public DateTime? PlanlananBitis     { get; set; }
 
         [ForeignKey("PersonelId")]
         public virtual Personel? Personel { get; set; }

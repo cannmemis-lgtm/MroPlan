@@ -8,10 +8,11 @@ namespace MroPlan.Services
     public class BildirimArkaplanServisi(
         IDbContextFactory<ApplicationDbContext> factory,
         BildirimServisi bildirimServisi,
+        IServiceScopeFactory scopeFactory,
         ILogger<BildirimArkaplanServisi> logger) : BackgroundService
     {
         private readonly HashSet<int> _oncekiAtananlar = [];
-        private readonly HashSet<int> _uyarilanlar = [];
+        private readonly HashSet<string> _uyarilanlar = [];
         // Atölye × parça çiftleri için SV5 eksikliği uyarısı verilmiş olanlar
         private readonly HashSet<string> _sv5UyarilanGruplar = [];
 
@@ -83,7 +84,7 @@ namespace MroPlan.Services
                 .Where(k => k.Durum == nameof(BakimDurumu.Beklemede)
                     && k.AtananPersonelId == null
                     && (DateTime.UtcNow - k.IslemTarihi).TotalHours >= 48
-                    && !_uyarilanlar.Contains(k.Id))
+                    && !_uyarilanlar.Contains($"bekleme_{k.Id}"))
                 .ToList();
 
             foreach (var k in uzunBekleyenler)
@@ -96,7 +97,7 @@ namespace MroPlan.Services
                     Turu    = BildirimTuru.Gecikme,
                     Seviye  = BildirimSeviye.Uyari
                 });
-                _uyarilanlar.Add(k.Id);
+                _uyarilanlar.Add($"bekleme_{k.Id}");
             }
 
             // 3. Geliştirme modunda 7+ gün geçen kartlar
@@ -104,7 +105,7 @@ namespace MroPlan.Services
                 .Where(k => k.GelistirmeModu
                     && k.GelistirmeBaslangic.HasValue
                     && (DateTime.UtcNow - k.GelistirmeBaslangic.Value).TotalDays >= 7
-                    && !_uyarilanlar.Contains(-(k.Id)))
+                    && !_uyarilanlar.Contains($"gelistirme_{k.Id}"))
                 .ToList();
 
             foreach (var k in uzunGelistirmeler)
@@ -117,7 +118,7 @@ namespace MroPlan.Services
                     Turu   = BildirimTuru.Gecikme,
                     Seviye = BildirimSeviye.Uyari
                 });
-                _uyarilanlar.Add(-(k.Id)); // negatif ID ile geliştirme uyarıları ayrı tutulur
+                _uyarilanlar.Add($"gelistirme_{k.Id}");
             }
 
             // 4. Atölyede hiç SV5 personel kalmayan kritik parçalar
@@ -155,7 +156,45 @@ namespace MroPlan.Services
                 }
             }
 
-            // 5. Kapasite aşımı (aynı atölyede 5+ eş zamanlı iş)
+            // 5. Süresi geçmiş eğitimleri otomatik tamamla
+            var sureciGecmisEgitimler = await ctx.PersonelEgitimleri
+                .Include(pe => pe.Personel)
+                .Include(pe => pe.EgitimModulu).ThenInclude(e => e!.ParcaSablonu)
+                .Where(pe => !pe.Tamamlandi
+                    && pe.PlanlananBitis.HasValue
+                    && pe.PlanlananBitis.Value < DateTime.UtcNow)
+                .ToListAsync(ct);
+
+            if (sureciGecmisEgitimler.Count > 0)
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var yetkinlikService = scope.ServiceProvider.GetRequiredService<IYetkinlikService>();
+
+                foreach (var pe in sureciGecmisEgitimler)
+                {
+                    try
+                    {
+                        await yetkinlikService.EgitimiTamamlaAsync(pe.PersonelId, pe.EgitimModuluId);
+                        var personelAd = pe.Personel?.AdSoyad ?? $"Personel #{pe.PersonelId}";
+                        var egitimAd   = pe.EgitimModulu?.ParcaSablonu?.ParcaAdi ?? pe.EgitimModulu?.Ad ?? "Eğitim";
+                        var hedefSv    = pe.EgitimModulu?.HedefYetkinlikSeviyesi ?? 0;
+                        bildirimServisi.Ekle(new Bildirim
+                        {
+                            Baslik = "Eğitim Otomatik Tamamlandı",
+                            Mesaj  = $"{personelAd} — {egitimAd} SV{hedefSv} eğitimi tamamlandı",
+                            Turu   = BildirimTuru.SistemBilgisi,
+                            Seviye = BildirimSeviye.Bilgi
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Otomatik eğitim tamamlama hatası: PersonelId={PersonelId}, EgitimId={EgitimId}",
+                            pe.PersonelId, pe.EgitimModuluId);
+                    }
+                }
+            }
+
+            // 6. Kapasite aşımı (aynı atölyede 5+ eş zamanlı iş)
             var kapasiteAsimi = kayitlar
                 .Where(k => k.Durum == nameof(BakimDurumu.DevamEdiyor))
                 .GroupBy(k => k.ParcaSablonu?.BakimGrubuId ?? 0)

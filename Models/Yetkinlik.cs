@@ -31,7 +31,6 @@ namespace MroPlan.Models
 
         // Sertifika alanları
         public DateTime? SertifikaTarihi { get; set; }
-        public DateTime? GecerlilikTarihi { get; set; }
         public string? SertifikaBelgeNo { get; set; }
 
         // Audit

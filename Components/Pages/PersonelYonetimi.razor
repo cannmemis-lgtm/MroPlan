@@ -7,8 +7,10 @@
 @using Microsoft.EntityFrameworkCore
 @inject IPersonelService PersonelService
 @inject ApplicationDbContext Context
+@inject IYetkinlikService YetkinlikService
 @inject ISnackbar Snackbar
 @inject MudBlazor.IDialogService DialogService
+@inject IJSRuntime JS
 
 <MudContainer MaxWidth="@MaxWidth.False" Class="mt-8 animate-fade-in">
 
@@ -301,6 +303,192 @@
                 }
             </div>
         </div>
+
+        @* ─── ALINAN EĞİTİMLER ─── *@
+        @if (!_detayYukleniyor && _detayEgitimler.Count > 0)
+        {
+            <div class="mt-5">
+                <MudDivider Class="mb-4" />
+                <MudText Typo="Typo.subtitle2" Style="font-weight:800; margin-bottom:12px; color:var(--gold);">ALINAN EĞİTİMLER</MudText>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+                        <thead>
+                            <tr style="color:rgba(255,255,255,0.4); font-size:0.65rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em;">
+                                <th style="padding:6px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.06);">EĞİTİM</th>
+                                <th style="padding:6px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.06);">PARÇA</th>
+                                <th style="padding:6px 10px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06);">HEDEF SV</th>
+                                <th style="padding:6px 10px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06);">DURUM</th>
+                                <th style="padding:6px 10px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06);">TAMAMLANMA</th>
+                                <th style="padding:6px 10px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06);">SERTİFİKA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var eg in _detayEgitimler)
+                            {
+                                var parcaId = eg.EgitimModulu?.ParcaSablonuId;
+                                var ytk = parcaId.HasValue
+                                    ? _detayYetkinlikler.FirstOrDefault(y => y.ParcaSablonuId == parcaId.Value)
+                                    : null;
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                    <td style="padding:8px 10px; font-weight:700;">@(eg.EgitimModulu?.Ad ?? "—")</td>
+                                    <td style="padding:8px 10px; color:rgba(255,255,255,0.5);">@(eg.EgitimModulu?.ParcaSablonu?.ParcaAdi ?? "—")</td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        @{ var hedef = eg.EgitimModulu?.HedefYetkinlikSeviyesi ?? 0; }
+                                        <span style="background:@(hedef <= 1 ? "rgba(168,85,247,0.15)" : hedef == 2 ? "rgba(59,130,246,0.15)" : hedef == 3 ? "rgba(245,158,11,0.15)" : "rgba(16,185,129,0.15)"); color:@(hedef <= 1 ? "#a855f7" : hedef == 2 ? "#3B82F6" : hedef == 3 ? "#F59E0B" : "#10B981"); font-weight:900; font-size:0.65rem; padding:3px 8px; border-radius:6px;">
+                                            SV@(hedef)
+                                        </span>
+                                    </td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        @if (eg.Tamamlandi)
+                                        {
+                                            <span style="background:rgba(16,185,129,0.12); color:#10B981; font-weight:800; font-size:0.65rem; padding:3px 8px; border-radius:6px;">TAMAMLANDI</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="background:rgba(168,85,247,0.12); color:#a855f7; font-weight:800; font-size:0.65rem; padding:3px 8px; border-radius:6px;">EĞİTİMDE</span>
+                                        }
+                                    </td>
+                                    <td style="padding:8px 10px; text-align:center; color:rgba(255,255,255,0.5);">
+                                        @(eg.Tamamlandi ? eg.TamamlanmaTarihi.ToLocalTime().ToString("dd.MM.yyyy") : (eg.PlanlananBitis.HasValue ? eg.PlanlananBitis.Value.ToLocalTime().ToString("dd.MM.yyyy") + " (plan)" : "—"))
+                                    </td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        @if (eg.Tamamlandi && ytk?.SertifikaBelgeNo != null)
+                                        {
+                                            var egLocal = eg; var ytkLocal = ytk;
+                                            <button @onclick="@(() => AcSertifika(ytkLocal!, egLocal))"
+                                                    style="background:rgba(250,204,21,0.08); color:#FACC15; border:1px solid rgba(250,204,21,0.3);
+                                                           border-radius:6px; padding:3px 8px; font-size:0.6rem; font-weight:900;
+                                                           cursor:pointer; white-space:nowrap; letter-spacing:.03em;"
+                                                    title="Sertifikayı görüntüle ve yazdır">
+                                                🏅 @(ytk!.SertifikaBelgeNo)
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span style="color:rgba(255,255,255,0.2); font-size:0.65rem;">—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        </div>
+    </div>
+}
+
+@* ─── SERTİFİKA MODAL ─── *@
+@if (_sertifikaAcik && _sertifikaYtk != null && _sertifikaEgitim != null && _detayPersonel != null)
+{
+    <div class="cert-backdrop" @onclick="@(() => _sertifikaAcik = false)"></div>
+    <div class="cert-container">
+        <div class="cert-wrapper" @onclick:stopPropagation="true">
+
+            @* Toolbar *@
+            <div class="cert-toolbar">
+                <span style="font-weight:700; color:rgba(255,255,255,0.5); font-size:0.8rem;">SERTİFİKA ÖNİZLEME</span>
+                <div class="d-flex gap-2">
+                    <button class="cert-btn-print" @onclick="YazdirSertifika">
+                        🖨️ YAZDIR / PDF
+                    </button>
+                    <button class="cert-btn-close" @onclick="@(() => _sertifikaAcik = false)">✕</button>
+                </div>
+            </div>
+
+            @* Sertifika Belgesi *@
+            <div class="cert-doc" id="cert-print-area">
+
+                @* Üst dekoratif şerit *@
+                <div class="cert-top-bar"></div>
+
+                @* Header *@
+                <div class="cert-header">
+                    <div class="cert-logo-area">
+                        <div class="cert-logo-icon">✈</div>
+                        <div>
+                            <div class="cert-org-name">MROPlan</div>
+                            <div class="cert-org-sub">Bakım, Onarım ve Revizyon Yönetim Sistemi</div>
+                        </div>
+                    </div>
+                    <div class="cert-badge-area">
+                        <div class="cert-sv-badge">SV@(_sertifikaEgitim.EgitimModulu?.HedefYetkinlikSeviyesi ?? 0)</div>
+                        <div class="cert-sv-label">YETKİNLİK SEVİYESİ</div>
+                    </div>
+                </div>
+
+                <div class="cert-divider"></div>
+
+                @* Ana başlık *@
+                <div class="cert-title-block">
+                    <div class="cert-title-tr">YETKİNLİK SERTİFİKASI</div>
+                    <div class="cert-title-en">COMPETENCY CERTIFICATE</div>
+                </div>
+
+                @* Açıklama metni *@
+                <div class="cert-description">
+                    Bu belge, aşağıda bilgileri yer alan personelin belirtilen uçak bakım parçasında
+                    gerekli yetkinlik seviyesine ulaştığını ve ilgili bakım faaliyetlerini
+                    yürütmeye yetkili olduğunu onaylar.
+                </div>
+
+                @* Bilgi grid *@
+                <div class="cert-info-grid">
+                    <div class="cert-info-block cert-info-left">
+                        <div class="cert-info-section-title">PERSONEL BİLGİLERİ</div>
+                        <div class="cert-info-row"><span class="cert-label">Ad Soyad</span><span class="cert-value">@_detayPersonel.AdSoyad</span></div>
+                        <div class="cert-info-row"><span class="cert-label">Sicil No</span><span class="cert-value">@_detayPersonel.SicilNo</span></div>
+                        <div class="cert-info-row"><span class="cert-label">Ünvan</span><span class="cert-value">@(_detayPersonel.Unvan ?? "—")</span></div>
+                        <div class="cert-info-row"><span class="cert-label">Atölye</span><span class="cert-value">@GetAtolyeAdi(_detayPersonel.AtolyeKodu)</span></div>
+                    </div>
+                    <div class="cert-info-block cert-info-right">
+                        <div class="cert-info-section-title">YETKİNLİK BİLGİLERİ</div>
+                        <div class="cert-info-row"><span class="cert-label">Parça Adı</span><span class="cert-value">@(_sertifikaEgitim.EgitimModulu?.ParcaSablonu?.ParcaAdi ?? "—")</span></div>
+                        <div class="cert-info-row"><span class="cert-label">Part No</span><span class="cert-value cert-mono">@(_sertifikaYtk.ParcaPN ?? "—")</span></div>
+                        <div class="cert-info-row"><span class="cert-label">Heli Tipi</span><span class="cert-value">@(_sertifikaEgitim.EgitimModulu?.ParcaSablonu?.HeliTipi ?? "—")</span></div>
+                        <div class="cert-info-row"><span class="cert-label">Eğitim</span><span class="cert-value">@(_sertifikaEgitim.EgitimModulu?.Ad ?? "—")</span></div>
+                    </div>
+                </div>
+
+                @* Sertifika numarası ve tarih *@
+                <div class="cert-number-row">
+                    <div class="cert-number-block">
+                        <div class="cert-number-label">SERTİFİKA NO</div>
+                        <div class="cert-number-value">@_sertifikaYtk.SertifikaBelgeNo</div>
+                    </div>
+                    <div class="cert-number-block">
+                        <div class="cert-number-label">DÜZENLEME TARİHİ</div>
+                        <div class="cert-number-value">@(_sertifikaYtk.SertifikaTarihi?.ToLocalTime().ToString("dd.MM.yyyy") ?? "—")</div>
+                    </div>
+                    <div class="cert-number-block">
+                        <div class="cert-number-label">KATEGORİ</div>
+                        <div class="cert-number-value">OJT / On-the-Job Training</div>
+                    </div>
+                </div>
+
+                @* Alt bölüm: imza + mühür *@
+                <div class="cert-footer">
+                    <div class="cert-sign-area">
+                        <div class="cert-sign-line"></div>
+                        <div class="cert-sign-label">Onaylayan — Approver</div>
+                    </div>
+                    <div class="cert-stamp">
+                        <div class="cert-stamp-inner">
+                            <div class="cert-stamp-text">MROPlan</div>
+                            <div class="cert-stamp-sub">ONAYLIDIR</div>
+                        </div>
+                    </div>
+                    <div class="cert-sign-area">
+                        <div class="cert-sign-line"></div>
+                        <div class="cert-sign-label">Personel — Certificate Holder</div>
+                    </div>
+                </div>
+
+                @* Alt dekoratif şerit *@
+                <div class="cert-bottom-bar"></div>
+            </div>
         </div>
     </div>
 }
@@ -345,6 +533,73 @@
     .py-avatar { width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, #FACC15, #D97706); color: black; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 22px; flex-shrink: 0; box-shadow: 0 8px 15px rgba(250, 204, 21, 0.2); }
     .py-stat-box { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 18px; text-align: center; transition: all 0.3s ease; }
     .py-stat-box:hover { background: rgba(255,255,255,0.05); border-color: rgba(250, 204, 21, 0.2); transform: translateY(-3px); }
+
+    /* ── Sertifika Modal ── */
+    .cert-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:2000; backdrop-filter:blur(8px); }
+    .cert-container { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:2001; padding:20px; pointer-events:none; }
+    .cert-wrapper   { pointer-events:all; width:100%; max-width:860px; max-height:95vh; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
+    .cert-toolbar   { display:flex; align-items:center; justify-content:space-between; background:rgba(15,20,25,0.95); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:10px 16px; }
+    .cert-btn-print { background:linear-gradient(135deg,#FACC15,#D97706); color:#000; border:none; border-radius:8px; padding:8px 18px; font-weight:900; font-size:0.78rem; cursor:pointer; letter-spacing:.04em; }
+    .cert-btn-print:hover { opacity:.9; }
+    .cert-btn-close { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.5); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px 14px; font-weight:700; cursor:pointer; }
+
+    .cert-doc       { background:#fff; color:#1a1a2e; border-radius:16px; overflow:hidden; font-family:'Inter','Segoe UI',sans-serif; box-shadow:0 30px 60px rgba(0,0,0,0.5); }
+    .cert-top-bar   { height:8px; background:linear-gradient(90deg,#1a1a2e,#16213e,#0f3460,#533483,#FACC15); }
+    .cert-bottom-bar{ height:8px; background:linear-gradient(90deg,#FACC15,#533483,#0f3460,#16213e,#1a1a2e); }
+
+    .cert-header    { display:flex; align-items:center; justify-content:space-between; padding:24px 32px 16px; background:linear-gradient(135deg,#0f172a,#1e293b); color:#fff; }
+    .cert-logo-area { display:flex; align-items:center; gap:14px; }
+    .cert-logo-icon { width:52px; height:52px; background:linear-gradient(135deg,#FACC15,#D97706); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:28px; color:#000; box-shadow:0 4px 15px rgba(250,204,21,0.4); }
+    .cert-org-name  { font-size:1.4rem; font-weight:900; color:#FACC15; letter-spacing:-0.5px; }
+    .cert-org-sub   { font-size:0.65rem; color:rgba(255,255,255,0.5); font-weight:600; margin-top:2px; }
+    .cert-badge-area{ text-align:center; }
+    .cert-sv-badge  { width:60px; height:60px; border-radius:50%; background:linear-gradient(135deg,#FACC15,#D97706); color:#000; display:flex; align-items:center; justify-content:center; font-size:1.1rem; font-weight:900; margin:0 auto 4px; box-shadow:0 0 20px rgba(250,204,21,0.4); }
+    .cert-sv-label  { font-size:0.55rem; color:rgba(255,255,255,0.5); font-weight:800; letter-spacing:.1em; white-space:nowrap; }
+
+    .cert-divider   { height:1px; background:linear-gradient(90deg,transparent,#FACC15,transparent); margin:0 32px; }
+
+    .cert-title-block { text-align:center; padding:20px 32px 8px; background:#fff; }
+    .cert-title-tr  { font-size:1.6rem; font-weight:900; color:#0f172a; letter-spacing:2px; }
+    .cert-title-en  { font-size:0.75rem; font-weight:700; color:#64748b; letter-spacing:4px; margin-top:3px; }
+
+    .cert-description { text-align:center; padding:10px 48px 16px; font-size:0.78rem; color:#475569; line-height:1.6; border-bottom:1px dashed #e2e8f0; }
+
+    .cert-info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; margin:0; }
+    .cert-info-block { padding:20px 28px; }
+    .cert-info-left  { border-right:1px dashed #e2e8f0; }
+    .cert-info-section-title { font-size:0.6rem; font-weight:900; letter-spacing:.15em; color:#94a3b8; text-transform:uppercase; margin-bottom:12px; padding-bottom:6px; border-bottom:2px solid #FACC15; display:inline-block; }
+    .cert-info-row  { display:flex; gap:8px; margin-bottom:8px; align-items:baseline; }
+    .cert-label     { font-size:0.65rem; font-weight:700; color:#94a3b8; width:80px; flex-shrink:0; }
+    .cert-value     { font-size:0.78rem; font-weight:700; color:#1e293b; }
+    .cert-mono      { font-family:monospace; font-size:0.72rem; }
+
+    .cert-number-row { display:flex; gap:0; border-top:1px dashed #e2e8f0; border-bottom:1px dashed #e2e8f0; }
+    .cert-number-block { flex:1; padding:14px 20px; text-align:center; }
+    .cert-number-block+.cert-number-block { border-left:1px dashed #e2e8f0; }
+    .cert-number-label { font-size:0.55rem; font-weight:900; letter-spacing:.12em; color:#94a3b8; margin-bottom:5px; }
+    .cert-number-value { font-size:0.78rem; font-weight:900; color:#0f172a; font-family:monospace; }
+
+    .cert-footer    { display:flex; align-items:flex-end; justify-content:space-between; padding:20px 32px 24px; }
+    .cert-sign-area { flex:1; text-align:center; }
+    .cert-sign-line { height:1px; background:#0f172a; margin-bottom:6px; }
+    .cert-sign-label{ font-size:0.6rem; color:#64748b; font-weight:600; }
+    .cert-stamp     { width:90px; height:90px; border:3px solid #FACC15; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 24px; flex-shrink:0; }
+    .cert-stamp-inner{ text-align:center; }
+    .cert-stamp-text { font-size:0.75rem; font-weight:900; color:#0f172a; letter-spacing:1px; }
+    .cert-stamp-sub  { font-size:0.55rem; font-weight:900; color:#FACC15; letter-spacing:.1em; }
+
+    /* ── Print Stilleri ── */
+    @@media print {
+        body > * { visibility: hidden !important; }
+        #cert-print-area, #cert-print-area * { visibility: visible !important; }
+        #cert-print-area {
+            position: fixed !important; inset: 0 !important;
+            width: 100vw !important; height: auto !important;
+            z-index: 9999 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+    }
 </style>
 
 @code {
@@ -365,6 +620,13 @@
     private int _detayUzmanCount;
     private List<(string HeliTipi, int Adet, double OrtSeviye)> _detayHeliStats = new();
     private List<(string Label, double Actual)> _detayRadarPoints = new();
+    private List<PersonelEgitim> _detayEgitimler = new();
+    private List<Yetkinlik> _detayYetkinlikler = new();
+
+    // Sertifika modal
+    private bool _sertifikaAcik;
+    private Yetkinlik? _sertifikaYtk;
+    private PersonelEgitim? _sertifikaEgitim;
 
     protected override async Task OnInitializedAsync() => await VerileriYukle();
 
@@ -451,6 +713,15 @@
             .Select(x => (Label: x.HeliTipi, Actual: x.OrtSeviye / 5.0 * 100))
             .ToList();
 
+        _detayYetkinlikler = yetkinlikler;
+
+        _detayEgitimler = await Context.PersonelEgitimleri
+            .Include(pe => pe.EgitimModulu).ThenInclude(e => e!.ParcaSablonu)
+            .Where(pe => pe.PersonelId == p.Id)
+            .OrderByDescending(pe => pe.Tamamlandi ? (pe.TamamlanmaTarihi) : (pe.PlanlananBitis ?? DateTime.MinValue))
+            .AsNoTracking()
+            .ToListAsync();
+
         _detayYukleniyor = false;
     }
 
@@ -458,6 +729,18 @@
     {
         _detayAcik = false;
         _detayPersonel = null;
+    }
+
+    private void AcSertifika(Yetkinlik ytk, PersonelEgitim eg)
+    {
+        _sertifikaYtk   = ytk;
+        _sertifikaEgitim = eg;
+        _sertifikaAcik  = true;
+    }
+
+    private async Task YazdirSertifika()
+    {
+        await JS.InvokeVoidAsync("window.print");
     }
 
     private static readonly DialogOptions _dialogOptions = new()

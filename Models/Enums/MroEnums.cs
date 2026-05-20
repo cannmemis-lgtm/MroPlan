@@ -17,4 +17,11 @@ namespace MroPlan.Models.Enums
         Tamamlandi,
         IptalEdildi
     }
+
+    public enum BakimSeviyesi
+    {
+        Operasyonel,   // O-Level: uçuş hattı bakımı
+        Orta,          // I-Level: orta kademe bakım
+        Depo           // D-Level: depo seviyesi onarım
+    }
 }

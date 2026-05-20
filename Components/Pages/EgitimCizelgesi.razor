@@ -1,0 +1,701 @@
+@page "/egitim-cizelgesi"
+@using MroPlan.Models
+@using MroPlan.Services
+@using MudBlazor
+@inject IYetkinlikService YetkinlikService
+@inject ISnackbar Snackbar
+@implements IAsyncDisposable
+
+<PageTitle>Eğitim Çizelgesi</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="mt-6 animate-fade-in">
+
+    @* ─── BAŞLIK ─── *@
+    <div class="d-flex align-center justify-space-between mb-6">
+        <div>
+            <div class="d-flex align-center gap-3">
+                <div style="width:8px; height:32px; background:#FACC15; border-radius:4px; box-shadow:0 0 15px #FACC15;"></div>
+                <MudText Typo="Typo.h4" Style="font-weight:900; letter-spacing:-1.5px; text-transform:uppercase; color:#FACC15; font-family:'Outfit', sans-serif;">EĞİTİM ÇİZELGESİ</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.45); font-weight:600; margin-left:24px; font-family:'Inter', sans-serif;">
+                Personel yetkinlik gelişim planları, eğitim atamaları ve çizelge görünümü
+            </MudText>
+        </div>
+    </div>
+
+    @* ─── KPI KARTLARI ─── *@
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center" Elevation="0"
+                      Style="border-left:5px solid #3B82F6; background:rgba(15,20,25,0.6); border:1px solid rgba(59,130,246,0.2) !important; border-left:5px solid #3B82F6 !important;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(59,130,246,0.08); color:#3B82F6;">
+                    <MudIcon Icon="@Icons.Material.Filled.School" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em; display:block;">AKTİF EĞİTİM</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#3B82F6; font-family:'Outfit', sans-serif;">@_kpiAktif</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center" Elevation="0"
+                      Style="background:rgba(15,20,25,0.6); border:1px solid rgba(16,185,129,0.2) !important; border-left:5px solid #10B981 !important;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(16,185,129,0.08); color:#10B981;">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em; display:block;">BU AY TAMAMLANAN</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#10B981; font-family:'Outfit', sans-serif;">@_kpiBuAy</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center" Elevation="0"
+                      Style="background:rgba(15,20,25,0.6); border:1px solid rgba(245,158,11,0.2) !important; border-left:5px solid #F59E0B !important;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(245,158,11,0.08); color:#F59E0B;">
+                    <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em; display:block;">PLANLANAN</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#F59E0B; font-family:'Outfit', sans-serif;">@_kpiPlanlanan</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center" Elevation="0"
+                      Style="background:rgba(15,20,25,0.6); border:1px solid rgba(250,204,21,0.2) !important; border-left:5px solid #FACC15 !important;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(250,204,21,0.08); color:#FACC15;">
+                    <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em; display:block;">ORT. TAMAMLANMA</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#FACC15; font-family:'Outfit', sans-serif;">@_kpiOrtSure</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ─── FİLTRE ÇUBUĞU ─── *@
+    <div class="d-flex flex-wrap align-center gap-4 mb-4 pa-4 rounded-xxl"
+         style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05);">
+        <MudSelect T="string" @bind-Value="_filtreAtolye" Placeholder="Tüm Atölyeler"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:200px;"
+                   AnchorOrigin="Origin.BottomCenter">
+            <MudSelectItem Value='@("")'>Tüm Atölyeler</MudSelectItem>
+            @foreach (var a in _atolyeler)
+            {
+                <MudSelectItem Value="@a">@a</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="int?" @bind-Value="_filtreHedefSv" Placeholder="Hedef SV"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px;"
+                   AnchorOrigin="Origin.BottomCenter">
+            <MudSelectItem T="int?" Value="@null">Tüm Seviyeler</MudSelectItem>
+            <MudSelectItem T="int?" Value="@((int?)2)">Hedef SV2</MudSelectItem>
+            <MudSelectItem T="int?" Value="@((int?)3)">Hedef SV3</MudSelectItem>
+            <MudSelectItem T="int?" Value="@((int?)4)">Hedef SV4</MudSelectItem>
+            <MudSelectItem T="int?" Value="@((int?)5)">Hedef SV5</MudSelectItem>
+        </MudSelect>
+
+        @* Renk Legendı *@
+        <div class="d-flex align-center gap-3 ml-auto flex-wrap">
+            @foreach (var (sv, renk, ad) in new[] { (1,"#a855f7","SV1"), (2,"#3B82F6","SV2"), (3,"#F59E0B","SV3"), (4,"#10B981","SV4"), (5,"#FACC15","SV5") })
+            {
+                <div class="d-flex align-center gap-1">
+                    <div style="width:12px; height:12px; border-radius:3px; background:@renk;"></div>
+                    <span style="font-size:0.7rem; color:rgba(255,255,255,0.5); font-weight:700;">@ad</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ─── GÖRÜNÜM TOGGLE ─── *@
+    <div class="d-flex align-center gap-3 mb-4">
+        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" Class="rounded-lg overflow-hidden">
+            <MudButton OnClick='() => SetGoruntuleModu("Personel")'
+                       Variant='@(_goruntuleModu == "Personel" ? Variant.Filled : Variant.Outlined)'
+                       Color='@(_goruntuleModu == "Personel" ? Color.Warning : Color.Default)'
+                       Style="font-weight:800; font-size:0.75rem;">
+                <MudIcon Icon="@Icons.Material.Rounded.Person" Size="Size.Small" Class="mr-1" />PERSONEL BAZLI
+            </MudButton>
+            <MudButton OnClick='() => SetGoruntuleModu("Atolye")'
+                       Variant='@(_goruntuleModu == "Atolye" ? Variant.Filled : Variant.Outlined)'
+                       Color='@(_goruntuleModu == "Atolye" ? Color.Warning : Color.Default)'
+                       Style="font-weight:800; font-size:0.75rem;">
+                <MudIcon Icon="@Icons.Material.Rounded.BusinessCenter" Size="Size.Small" Class="mr-1" />ATÖLYE BAZLI
+            </MudButton>
+            <MudButton OnClick='() => SetGoruntuleModu("Modul")'
+                       Variant='@(_goruntuleModu == "Modul" ? Variant.Filled : Variant.Outlined)'
+                       Color='@(_goruntuleModu == "Modul" ? Color.Warning : Color.Default)'
+                       Style="font-weight:800; font-size:0.75rem;">
+                <MudIcon Icon="@Icons.Material.Rounded.School" Size="Size.Small" Class="mr-1" />MODÜL BAZLI
+            </MudButton>
+        </MudButtonGroup>
+    </div>
+
+    @* ─── GANTT CHART ─── *@
+    <MudPaper Elevation="0" Class="pa-4 rounded-xxl mb-6"
+              Style="background:rgba(15,20,25,0.6); border:1px solid rgba(255,255,255,0.06);">
+        @if (_yukleniyor)
+        {
+            <div class="d-flex justify-center align-center" style="min-height:300px;">
+                <MudProgressCircular Color="Color.Warning" Indeterminate="true" Size="Size.Large" />
+            </div>
+        }
+        else if (!_sv1Datum.Any() && !_sv2Datum.Any() && !_sv3Datum.Any() && !_sv4Datum.Any() && !_sv5Datum.Any())
+        {
+            <div class="d-flex flex-column align-center pa-12 gap-3">
+                <MudIcon Icon="@Icons.Material.Filled.EventBusy" Style="font-size:4rem; color:rgba(255,255,255,0.1);" />
+                <MudText Style="color:rgba(255,255,255,0.35); font-weight:700;">Gösterilecek eğitim planı bulunamadı.</MudText>
+                <MudText Style="color:rgba(255,255,255,0.25); font-size:0.8rem;">Yetkinlik sayfasından AI planlayıcı ile eğitim ataması yapabilirsiniz.</MudText>
+            </div>
+        }
+        else
+        {
+            <ApexCharts.ApexChart TItem="EgitimGanttItem" Options="_egitimOptions"
+                       @ref="_egitimChart" @key="_chartKey"
+                       Height="@_chartHeight"
+                       XAxisType="ApexCharts.XAxisType.Datetime"
+                       OnDataPointSelection="GrupDetayAc">
+                <ApexCharts.ApexRangeSeries TItem="EgitimGanttItem"
+                    Items="_sv1Datum" Name="Hedef SV1"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => e.Bas)"
+                    YMaxValue="@(e => e.Bit)" />
+                <ApexCharts.ApexRangeSeries TItem="EgitimGanttItem"
+                    Items="_sv2Datum" Name="Hedef SV2"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => e.Bas)"
+                    YMaxValue="@(e => e.Bit)" />
+                <ApexCharts.ApexRangeSeries TItem="EgitimGanttItem"
+                    Items="_sv3Datum" Name="Hedef SV3"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => e.Bas)"
+                    YMaxValue="@(e => e.Bit)" />
+                <ApexCharts.ApexRangeSeries TItem="EgitimGanttItem"
+                    Items="_sv4Datum" Name="Hedef SV4"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => e.Bas)"
+                    YMaxValue="@(e => e.Bit)" />
+                <ApexCharts.ApexRangeSeries TItem="EgitimGanttItem"
+                    Items="_sv5Datum" Name="Hedef SV5"
+                    XValue="@(e => e.Grup)"
+                    YMinValue="@(e => e.Bas)"
+                    YMaxValue="@(e => e.Bit)" />
+            </ApexCharts.ApexChart>
+        }
+    </MudPaper>
+
+    @* ─── ATAMA LİSTESİ ─── *@
+    <MudExpansionPanels Class="mb-8">
+        <MudExpansionPanel Style="background:rgba(15,20,25,0.6); border:1px solid rgba(255,255,255,0.06); border-radius:16px;">
+            <TitleContent>
+                <div class="d-flex align-center gap-3">
+                    <MudIcon Icon="@Icons.Material.Rounded.FormatListBulleted" Color="Color.Warning" />
+                    <MudText Style="font-weight:900; color:#FACC15;">ATAMA LİSTESİ (@_goruntulenenItems.Count)</MudText>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                <MudTable Items="_goruntulenenItems" Dense="true" Hover="true" RowsPerPage="15"
+                          Style="background:transparent;" Class="mt-2">
+                    <HeaderContent>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">PERSONEL</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">ATÖLYE</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">EĞİTİM</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">HEDEF SV</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">BAŞLANGIÇ</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">BİTİŞ</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">İLERLEME</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">DURUM</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800; text-align:right;">İŞLEMLER</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="font-size:0.8rem; font-weight:700;">@context.PersonelAd</MudTd>
+                        <MudTd Style="font-size:0.75rem; color:rgba(255,255,255,0.6);">@context.AtolyeAdi</MudTd>
+                        <MudTd>
+                            <div style="font-size:0.8rem; font-weight:700;">@context.EgitimAdi</div>
+                            @if (!string.IsNullOrEmpty(context.ParcaAdi))
+                            {
+                                <div style="font-size:0.6rem; color:rgba(255,255,255,0.35);">@context.ParcaAdi</div>
+                            }
+                            <div style="font-size:0.6rem; font-weight:800; color:#f59e0b; margin-top:2px;">
+                                SV@(context.MevcutSv) → SV@(context.HedefSv)
+                            </div>
+                        </MudTd>
+                        <MudTd Style="text-align:center;">
+                            <span style="background:color-mix(in srgb, @context.Renk 15%, transparent);
+                                         color:@context.Renk; font-weight:900; font-size:0.7rem;
+                                         padding:3px 8px; border-radius:6px; border:1px solid color-mix(in srgb, @context.Renk 30%, transparent);">
+                                SV@(context.HedefSv)
+                            </span>
+                        </MudTd>
+                        <MudTd Style="font-size:0.75rem; color:rgba(255,255,255,0.6);">
+                            @DateTimeOffset.FromUnixTimeMilliseconds(context.BasMs).LocalDateTime.ToString("dd.MM.yyyy")
+                        </MudTd>
+                        <MudTd Style="font-size:0.75rem; color:rgba(255,255,255,0.6);">
+                            @DateTimeOffset.FromUnixTimeMilliseconds(context.BitMs).LocalDateTime.ToString("dd.MM.yyyy")
+                        </MudTd>
+                        <MudTd>
+                            <div class="d-flex align-center gap-2" style="min-width:100px;">
+                                <div style="flex:1; height:4px; background:rgba(255,255,255,0.08); border-radius:2px;">
+                                    <div style="width:@(context.IlerlemeYuzdesi)%; height:100%; background:@context.Renk; border-radius:2px; transition:width 0.3s;"></div>
+                                </div>
+                                <span style="font-size:0.65rem; color:rgba(255,255,255,0.4); white-space:nowrap;">%@context.IlerlemeYuzdesi</span>
+                            </div>
+                        </MudTd>
+                        <MudTd>
+                            @if (context.Tamamlandi)
+                            {
+                                <span style="background:rgba(16,185,129,0.12); color:#10B981; font-weight:800; font-size:0.65rem; padding:3px 8px; border-radius:6px;">TAMAMLANDI</span>
+                            }
+                            else
+                            {
+                                <span style="background:rgba(59,130,246,0.12); color:#3B82F6; font-weight:800; font-size:0.65rem; padding:3px 8px; border-radius:6px;">EĞİTİMDE</span>
+                            }
+                        </MudTd>
+                        <MudTd Style="text-align:right;">
+                            @{ var ctx2 = context; }
+                            <MudMenu Icon="@Icons.Material.Rounded.MoreVert" Size="Size.Small"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     Dense="true">
+                                @if (!ctx2.Tamamlandi)
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Rounded.CheckCircle"
+                                                 IconColor="Color.Success"
+                                                 OnClick="@(async () => await EgitimiTamamla(ctx2))">
+                                        Tamamla
+                                    </MudMenuItem>
+                                }
+                                <MudMenuItem Icon="@Icons.Material.Rounded.Delete"
+                                             IconColor="Color.Error"
+                                             Style="color:#f87171;"
+                                             OnClick="@(async () => await AtamaKaldir(ctx2))">
+                                    Sil
+                                </MudMenuItem>
+                            </MudMenu>
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[] { 15, 30, 50 }" />
+                    </PagerContent>
+                </MudTable>
+            </ChildContent>
+        </MudExpansionPanel>
+        @* ─── EĞİTİM GEÇMİŞİ ─── *@
+        <MudExpansionPanel Style="background:rgba(15,20,25,0.6); border:1px solid rgba(255,255,255,0.06); border-radius:16px; margin-top:8px;">
+            <TitleContent>
+                <div class="d-flex align-center gap-3">
+                    <MudIcon Icon="@Icons.Material.Rounded.History" Color="Color.Success" />
+                    <MudText Style="font-weight:900; color:#10B981;">EĞİTİM GEÇMİŞİ (@_tamamlananItems.Count)</MudText>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                <MudTable Items="_tamamlananItems" Dense="true" Hover="true" RowsPerPage="15"
+                          Style="background:transparent;" Class="mt-2">
+                    <HeaderContent>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">PERSONEL</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">ATÖLYE</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">EĞİTİM</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">GEÇİŞ</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">BAŞLANGIÇ</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">TAMAMLANMA</MudTh>
+                        <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">SÜRE</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="font-size:0.8rem; font-weight:700;">@context.PersonelAd</MudTd>
+                        <MudTd Style="font-size:0.75rem; color:rgba(255,255,255,0.6);">@context.AtolyeAdi</MudTd>
+                        <MudTd>
+                            <div style="font-size:0.8rem; font-weight:700;">@context.EgitimAdi</div>
+                            @if (!string.IsNullOrEmpty(context.ParcaAdi))
+                            {
+                                <div style="font-size:0.6rem; color:rgba(255,255,255,0.35);">@context.ParcaAdi</div>
+                            }
+                        </MudTd>
+                        <MudTd Style="text-align:center;">
+                            <span style="background:rgba(16,185,129,0.12); color:#10B981; font-weight:900; font-size:0.65rem; padding:3px 8px; border-radius:6px;">
+                                SV@(context.MevcutSv)→SV@(context.HedefSv)
+                            </span>
+                        </MudTd>
+                        <MudTd Style="font-size:0.75rem; color:rgba(255,255,255,0.6);">
+                            @DateTimeOffset.FromUnixTimeMilliseconds(context.BasMs).LocalDateTime.ToString("dd.MM.yyyy")
+                        </MudTd>
+                        <MudTd Style="font-size:0.75rem; color:#10B981; font-weight:700;">
+                            @(context.TamamlanmaTarihi.HasValue ? context.TamamlanmaTarihi.Value.ToLocalTime().ToString("dd.MM.yyyy") : "—")
+                        </MudTd>
+                        <MudTd Style="font-size:0.75rem; color:rgba(255,255,255,0.5);">
+                            @{
+                                var sure = context.TamamlanmaTarihi.HasValue
+                                    ? (int)(context.TamamlanmaTarihi.Value - DateTimeOffset.FromUnixTimeMilliseconds(context.BasMs).UtcDateTime).TotalDays
+                                    : 0;
+                            }
+                            @(sure > 0 ? $"{sure} gün" : "—")
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[] { 15, 30, 50 }" />
+                    </PagerContent>
+                </MudTable>
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+</MudContainer>
+
+@* ─── GRUP DETAY MODALI ─── *@
+@if (_grupDetayAcik)
+{
+    <div class="ec-backdrop" @onclick="@(() => _grupDetayAcik = false)"></div>
+    <div class="ec-modal-container">
+        <div class="ec-modal">
+            <div class="d-flex align-center justify-space-between mb-4">
+                <div>
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:#FACC15;">@_grupDetayAdi</MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">@_grupDetayItems.Count personel eğitimde</MudText>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _grupDetayAcik = false)"
+                               Size="Size.Small" Style="color:rgba(255,255,255,0.3);" />
+            </div>
+            @if (!_grupDetayItems.Any())
+            {
+                <div class="pa-6 text-center" style="color:rgba(255,255,255,0.35);">Bu eğitimde aktif personel yok.</div>
+            }
+            else
+            {
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; max-height:60vh; overflow-y:auto;">
+                    @foreach (var item in _grupDetayItems.OrderBy(i => i.PersonelAd))
+                    {
+                        var gunKaldi = (int)(DateTimeOffset.FromUnixTimeMilliseconds(item.BitMs).UtcDateTime.Date - DateTime.UtcNow.Date).TotalDays;
+                        var gecti    = gunKaldi < 0;
+                        var ctx      = item;
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px; position:relative;">
+                            <div class="d-flex align-center justify-space-between mb-2">
+                                <span style="font-weight:800; font-size:0.88rem;">@item.PersonelAd</span>
+                                <span style="background:color-mix(in srgb,@item.Renk 18%,transparent); color:@item.Renk;
+                                             font-weight:900; font-size:0.6rem; padding:2px 7px; border-radius:5px;">
+                                    SV@(item.MevcutSv)→SV@(item.HedefSv)
+                                </span>
+                            </div>
+                            <div style="font-size:0.7rem; color:rgba(255,255,255,0.45); margin-bottom:4px;">@item.AtolyeAdi</div>
+                            <div style="font-size:0.7rem; color:rgba(255,255,255,0.55); margin-bottom:8px;">@item.ParcaAdi</div>
+                            <div style="height:3px; background:rgba(255,255,255,0.08); border-radius:2px; margin-bottom:8px;">
+                                <div style="width:@(item.IlerlemeYuzdesi)%; height:100%; background:@item.Renk; border-radius:2px;"></div>
+                            </div>
+                            <div class="d-flex justify-space-between align-center">
+                                <span style="font-size:0.65rem; color:@(gecti ? "#f87171" : "rgba(255,255,255,0.35)");">
+                                    @if (gecti) { <text>@Math.Abs(gunKaldi) gün geçti</text> }
+                                    else if (gunKaldi == 0) { <text>Bugün bitiyor</text> }
+                                    else { <text>@gunKaldi gün kaldı</text> }
+                                </span>
+                                <span style="font-size:0.65rem; color:rgba(255,255,255,0.3);">
+                                    @DateTimeOffset.FromUnixTimeMilliseconds(item.BitMs).LocalDateTime.ToString("dd.MM.yyyy")
+                                </span>
+                            </div>
+                            <button @onclick="@(async () => await EgitimdenCikar(ctx))"
+                                    style="margin-top:10px; width:100%; padding:5px 0; font-size:0.68rem; font-weight:800;
+                                           background:rgba(248,113,113,0.08); color:#f87171; border:1px solid rgba(248,113,113,0.25);
+                                           border-radius:7px; cursor:pointer; transition:all .2s;"
+                                    onmouseover="this.style.background='rgba(248,113,113,0.18)'"
+                                    onmouseout="this.style.background='rgba(248,113,113,0.08)'">
+                                EĞİTİMDEN ÇIKAR
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .ec-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.6);
+        z-index: 1200;
+        backdrop-filter: blur(6px);
+        animation: fadeIn .3s ease;
+    }
+    .ec-modal-container {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1201; pointer-events: none; padding: 20px;
+    }
+    .ec-modal {
+        pointer-events: all;
+        width: 100%; max-width: 800px;
+        background: rgba(15,20,25,0.97);
+        border: 1px solid rgba(250,204,21,0.25);
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: 0 25px 50px rgba(0,0,0,0.7), 0 0 30px rgba(250,204,21,0.05);
+        animation: py-pop-center .4s cubic-bezier(.175,.885,.32,1.275);
+    }
+    @@keyframes py-pop-center {
+        from { opacity:0; transform:scale(0.85) translateY(20px); }
+        to   { opacity:1; transform:scale(1)    translateY(0); }
+    }
+    @@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+</style>
+
+@code {
+    // Grup = eğitim adı (Y ekseni), Bas/Bit = Unix ms (tarih, X ekseni)
+    private record EgitimGanttItem(
+        string Grup,
+        long Bas,
+        long Bit,
+        string PersonelAd = "",
+        int HedefSv = 2,
+        bool Tamamlandi = false);
+
+    private bool _yukleniyor = true;
+    private string _goruntuleModu = "Personel";
+    private string _filtreAtolye = "";
+    private int? _filtreHedefSv;
+
+    private List<EgitimCizelgesiItem> _tumItems = [];
+    private List<string> _atolyeler = [];
+
+    private List<EgitimGanttItem> _sv1Datum = [], _sv2Datum = [], _sv3Datum = [], _sv4Datum = [], _sv5Datum = [];
+    private int _chartHeight = 400;
+    private int _chartKey = 0;
+    private ApexCharts.ApexChart<EgitimGanttItem>? _egitimChart;
+
+    private int _kpiAktif, _kpiBuAy, _kpiPlanlanan;
+    private string _kpiOrtSure = "—";
+
+    // Grup detay modal
+    private bool _grupDetayAcik;
+    private string _grupDetayAdi = "";
+    private List<EgitimCizelgesiItem> _grupDetayItems = [];
+
+    private List<EgitimCizelgesiItem> _goruntulenenItems => _tumItems
+        .Where(i => !i.Tamamlandi
+                 && (string.IsNullOrEmpty(_filtreAtolye) || i.AtolyeAdi == _filtreAtolye)
+                 && (!_filtreHedefSv.HasValue || i.HedefSv == _filtreHedefSv))
+        .ToList();
+
+    private List<EgitimCizelgesiItem> _tamamlananItems => _tumItems
+        .Where(i => i.Tamamlandi)
+        .OrderByDescending(i => i.TamamlanmaTarihi)
+        .ToList();
+
+    private ApexCharts.ApexChartOptions<EgitimGanttItem> _egitimOptions = BuildOptions();
+
+    private static ApexCharts.ApexChartOptions<EgitimGanttItem> BuildOptions() => new()
+    {
+        Chart = new()
+        {
+            Type = ApexCharts.ChartType.RangeBar,
+            Background = "transparent",
+            ForeColor  = "#94a3b8",
+            Animations = new() { Enabled = true, Speed = 600 },
+            Toolbar    = new() { Show = true, Tools = new() { Zoom = true, Pan = true, Reset = true, Download = false } }
+        },
+        Theme  = new() { Mode = ApexCharts.Mode.Dark },
+        Colors = new List<string> { "#a855f7", "#3B82F6", "#F59E0B", "#10B981", "#FACC15" },
+        PlotOptions = new()
+        {
+            Bar = new() { Horizontal = true, BarHeight = "55%", RangeBarGroupRows = true }
+        },
+        Grid = new()
+        {
+            BorderColor = "rgba(255,255,255,0.05)",
+            Row = new() { Colors = new List<string> { "rgba(255,255,255,0.02)", "transparent" }, Opacity = 1 }
+        },
+        Tooltip = new()
+        {
+            Theme = ApexCharts.Mode.Dark,
+            X = new() { Formatter = "function(v){ var d=new Date(v); return ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.'+d.getFullYear() }" }
+        },
+        Legend    = new() { Position = ApexCharts.LegendPosition.Top, Labels = new() { Colors = "#e2e8f0" }, FontWeight = "700", ItemMargin = new() { Horizontal = 12 } },
+        DataLabels = new()
+        {
+            Enabled = true,
+            Formatter = "function(v, opts){ var ms=opts.w.globals.seriesRangeEnd[opts.seriesIndex][opts.dataPointIndex]-opts.w.globals.seriesRangeStart[opts.seriesIndex][opts.dataPointIndex]; return Math.round(ms/86400000)+' gün' }",
+            Style = new() { FontSize = "10px", FontWeight = "700", Colors = new List<string> { "#000" } }
+        },
+        Xaxis = new()
+        {
+            Type   = ApexCharts.XAxisType.Datetime,
+            Min    = 0,
+            Max    = 0,
+            Labels = new()
+            {
+                Formatter = "function(v){ var d=new Date(v); return ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.'+d.getFullYear() }",
+                Style     = new() { Colors = "#94a3b8", FontWeight = "600" },
+                Rotate    = -30
+            }
+        },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VeriYukle();
+    }
+
+    private async Task VeriYukle()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+        try
+        {
+            _tumItems = await YetkinlikService.GetEgitimCizelgesiAsync();
+            _atolyeler = _tumItems.Select(i => i.AtolyeAdi).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a).ToList();
+            HesaplaKpi();
+            HesaplaGantt();
+        }
+        catch (Exception ex) { Snackbar.Add($"Yükleme hatası: {ex.Message}", Severity.Error); }
+        finally { _yukleniyor = false; StateHasChanged(); }
+    }
+
+    private void HesaplaKpi()
+    {
+        var bugun = DateTimeOffset.UtcNow;
+        _kpiAktif = _tumItems.Count(i => !i.Tamamlandi);
+        _kpiBuAy  = _tumItems.Count(i =>
+            i.Tamamlandi &&
+            i.TamamlanmaTarihi.HasValue &&
+            i.TamamlanmaTarihi.Value.Month == bugun.Month &&
+            i.TamamlanmaTarihi.Value.Year  == bugun.Year);
+        _kpiPlanlanan = _tumItems.Count(i =>
+            !i.Tamamlandi &&
+            DateTimeOffset.FromUnixTimeMilliseconds(i.BasMs) > bugun);
+        var tamamlananlar = _tumItems.Where(i => i.Tamamlandi).ToList();
+        if (tamamlananlar.Any())
+        {
+            double avgMs = tamamlananlar.Average(i => (double)(i.BitMs - i.BasMs));
+            int gun = (int)TimeSpan.FromMilliseconds(avgMs).TotalDays;
+            _kpiOrtSure = gun > 0 ? $"{gun} gün" : "< 1 gün";
+        }
+        else { _kpiOrtSure = "—"; }
+    }
+
+    private void HesaplaGantt()
+    {
+        var filtered = _goruntulenenItems; // zaten !Tamamlandi filtreli
+
+        // Y ekseni: her zaman eğitim adı (modül adı)
+        var gruplar = filtered.GroupBy(i => string.IsNullOrEmpty(i.EgitimAdi) ? "Belirsiz" : i.EgitimAdi);
+
+        _sv1Datum = []; _sv2Datum = []; _sv3Datum = []; _sv4Datum = []; _sv5Datum = [];
+
+        long bugunMs = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        long maxMs   = bugunMs + (long)(30 * 24 * 3600 * 1000L);
+
+        foreach (var g in gruplar)
+        {
+            foreach (var item in g)
+            {
+                long bas = item.BasMs;
+                long bit = item.BitMs;
+                if (bit <= bas) bit = bas + (long)(24 * 3600 * 1000L);
+                if (bit > maxMs) maxMs = bit + (long)(2 * 24 * 3600 * 1000L);
+
+                var d = new EgitimGanttItem(g.Key, bas, bit, item.PersonelAd, item.HedefSv, item.Tamamlandi);
+                if      (item.HedefSv <= 1) _sv1Datum.Add(d);
+                else if (item.HedefSv == 2) _sv2Datum.Add(d);
+                else if (item.HedefSv == 3) _sv3Datum.Add(d);
+                else if (item.HedefSv == 4) _sv4Datum.Add(d);
+                else                        _sv5Datum.Add(d);
+            }
+        }
+
+        _egitimOptions.Xaxis!.Min = bugunMs;
+        _egitimOptions.Xaxis!.Max = maxMs;
+
+        var grupSayisi = gruplar.Count();
+        _chartHeight = Math.Max(300, grupSayisi * 80 + 140);
+
+        // Bugün annotation
+        _egitimOptions.Annotations = new()
+        {
+            Xaxis = new List<ApexCharts.AnnotationsXAxis>
+            {
+                new()
+                {
+                    X               = bugunMs,
+                    BorderColor     = "#facc15",
+                    BorderWidth     = 2,
+                    StrokeDashArray = 5,
+                    Label = new()
+                    {
+                        Text    = "BUGÜN",
+                        OffsetY = 0,
+                        Style   = new()
+                        {
+                            Color      = "#000",
+                            Background = "#facc15",
+                            FontWeight = "900",
+                            FontSize   = "11px",
+                            Padding    = new() { Top = 4, Bottom = 4, Left = 6, Right = 6 }
+                        }
+                    }
+                }
+            }
+        };
+        _chartKey++;
+    }
+
+    private async Task EgitimdenCikar(EgitimCizelgesiItem item)
+    {
+        try
+        {
+            await YetkinlikService.AtamaKaldirAsync(item.PersonelId, item.EgitimModuluId);
+            Snackbar.Add($"{item.PersonelAd} — eğitimden çıkarıldı.", Severity.Info);
+            await VeriYukle();
+            // Modalı güncelle (eğer hâlâ açıksa)
+            _grupDetayItems = _tumItems.Where(i => !i.Tamamlandi && i.EgitimAdi == _grupDetayAdi).ToList();
+            if (!_grupDetayItems.Any()) _grupDetayAcik = false;
+        }
+        catch (Exception ex) { Snackbar.Add($"Hata: {ex.Message}", Severity.Error); }
+    }
+
+    private void GrupDetayAc(ApexCharts.SelectedData<EgitimGanttItem> data)
+    {
+        // SeriesIndex: 0=sv1, 1=sv2, 2=sv3, 3=sv4, 4=sv5
+        List<EgitimGanttItem>[] seriler = [_sv1Datum, _sv2Datum, _sv3Datum, _sv4Datum, _sv5Datum];
+        if (data.SeriesIndex < 0 || data.SeriesIndex >= seriler.Length) return;
+        var liste = seriler[data.SeriesIndex];
+        if (data.DataPointIndex < 0 || data.DataPointIndex >= liste.Count) return;
+
+        var tiklayanItem  = liste[data.DataPointIndex];
+        _grupDetayAdi     = tiklayanItem.Grup;
+        _grupDetayItems   = _tumItems.Where(i => !i.Tamamlandi && i.EgitimAdi == _grupDetayAdi).ToList();
+        _grupDetayAcik    = true;
+        StateHasChanged();
+    }
+
+    private void SetGoruntuleModu(string mod)
+    {
+        _goruntuleModu = mod;
+        HesaplaGantt();
+        StateHasChanged();
+    }
+
+    private async Task EgitimiTamamla(EgitimCizelgesiItem item)
+    {
+        try
+        {
+            await YetkinlikService.EgitimiTamamlaAsync(item.PersonelId, item.EgitimModuluId);
+            Snackbar.Add($"{item.PersonelAd} — eğitim tamamlandı, yetkinlik güncellendi.", Severity.Success);
+            await VeriYukle();
+        }
+        catch (Exception ex) { Snackbar.Add($"Hata: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task AtamaKaldir(EgitimCizelgesiItem item)
+    {
+        try
+        {
+            await YetkinlikService.AtamaKaldirAsync(item.PersonelId, item.EgitimModuluId);
+            Snackbar.Add($"{item.PersonelAd} — atama silindi.", Severity.Info);
+            await VeriYukle();
+        }
+        catch (Exception ex) { Snackbar.Add($"Hata: {ex.Message}", Severity.Error); }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
+}

@@ -51,6 +51,35 @@
         </MudItem>
     </MudGrid>
 
+    @* ─── KRİTİK UYARI BANNER (KPI altında, daima görünür) ─── *@
+    @if (_uyarilar.Any(u => u.Seviye == UyariSeviye.Kritik))
+    {
+        var kritikler = _uyarilar.Where(u => u.Seviye == UyariSeviye.Kritik).ToList();
+        <MudPaper Class="pa-4 mb-6 rounded-xl d-flex align-center gap-4 flex-wrap"
+                  Style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.45);">
+            <div style="width:36px; height:36px; border-radius:10px; background:rgba(239,68,68,0.2);
+                        display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Style="color:#ef4444;" Size="Size.Small" />
+            </div>
+            <MudText Style="font-weight:900; color:#ef4444; white-space:nowrap;">
+                @kritikler.Count KRİTİK UYARI
+            </MudText>
+            @foreach (var u in kritikler.Take(3))
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                         Style="border-color:rgba(239,68,68,0.6); color:#fca5a5; font-weight:800;">
+                    @u.Baslik
+                </MudChip>
+            }
+            @if (kritikler.Count > 3)
+            {
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">
+                    +@(kritikler.Count - 3) daha — aşağıda detaylar
+                </MudText>
+            }
+        </MudPaper>
+    }
+
     @* ─── GANTT (ApexCharts RangeBar) & KONTROLLER ─── *@
     <MudPaper Class="pa-6 rounded-xxl cyber-card mb-6">
         @* Header & View Mode *@

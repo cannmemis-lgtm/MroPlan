@@ -1,17 +1,20 @@
 @page "/"
 @using MroPlan.Models.Enums
 @using MroPlan.Data
+@using MroPlan.Services
 @using Microsoft.EntityFrameworkCore
 @inject IPersonelService PersonelService
 @inject IBakimService BakimService
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IYillikPlanlamaService PlanlamaService
+@inject NavigationManager Nav
 
 <MudContainer MaxWidth="@MaxWidth.False">
 
-    @* === KPI CARDS === *@
-    <MudGrid Class="mb-8 stagger-children" Spacing="4">
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-5 kpi-card gradient-border">
+    @* ── BÖLÜM 1: KPI Şeridi (6 kart) ──────────────────────────────── *@
+    <MudGrid Class="mb-6 stagger-children" Spacing="4">
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Class="pa-5 kpi-card gradient-border" @onclick='() => Nav.NavigateTo("/personel-yonetimi")' style="cursor:pointer;">
                 <div class="d-flex justify-space-between align-center mb-3">
                     <div class="icon-container gold">
                         <MudIcon Icon="@Icons.Material.Rounded.Groups" Size="Size.Medium" />
@@ -22,96 +25,145 @@
                 <div class="kpi-label mt-1">Toplam Personel</div>
             </MudPaper>
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-5 kpi-card gradient-border">
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Class="pa-5 kpi-card gradient-border" @onclick='() => Nav.NavigateTo("/atolye-operasyon")' style="cursor:pointer;">
                 <div class="d-flex justify-space-between align-center mb-3">
                     <div class="icon-container danger">
                         <MudIcon Icon="@Icons.Material.Rounded.FlightTakeoff" Size="Size.Medium" />
                     </div>
-                    <span class="kpi-badge" style="background: rgba(239, 68, 68, 0.08); color: #EF4444; border-color: rgba(239, 68, 68, 0.1);">HATTAT</span>
+                    <span class="kpi-badge" style="background:rgba(239,68,68,0.08);color:#EF4444;border-color:rgba(239,68,68,0.1);">HATTAT</span>
                 </div>
                 <div class="kpi-value">@_dashStats.AktifBakim</div>
                 <div class="kpi-label mt-1">Aktif Bakım</div>
             </MudPaper>
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-5 kpi-card gradient-border">
-                <div class="d-flex justify-space-between align-center mb-3">
-                    <div class="icon-container success">
-                        <MudIcon Icon="@Icons.Material.Rounded.TaskAlt" Size="Size.Medium" />
-                    </div>
-                    <span class="kpi-badge" style="background: rgba(34, 197, 94, 0.08); color: #22C55E; border-color: rgba(34, 197, 94, 0.1);">VERİM</span>
-                </div>
-                <div class="kpi-value">@_dashStats.TamamlananGorev</div>
-                <div class="kpi-label mt-1">Tamamlanan Görev</div>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-5 kpi-card gradient-border">
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Class="pa-5 kpi-card gradient-border" @onclick='() => Nav.NavigateTo("/is-emri-dagitim")' style="cursor:pointer;">
                 <div class="d-flex justify-space-between align-center mb-3">
                     <div class="icon-container info">
                         <MudIcon Icon="@Icons.Material.Rounded.HourglassTop" Size="Size.Medium" />
                     </div>
-                    <span class="kpi-badge" style="background: rgba(59, 130, 246, 0.08); color: #3B82F6; border-color: rgba(59, 130, 246, 0.1);">LOJİSTİK</span>
+                    <span class="kpi-badge" style="background:rgba(59,130,246,0.08);color:#3B82F6;border-color:rgba(59,130,246,0.1);">LOJİSTİK</span>
                 </div>
                 <div class="kpi-value">@_dashStats.BekleyenIsEmri</div>
                 <div class="kpi-label mt-1">Bekleyen İş Emri</div>
             </MudPaper>
         </MudItem>
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Class="pa-5 kpi-card gradient-border" @onclick='() => Nav.NavigateTo("/performans-analizi")' style="cursor:pointer;">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container success">
+                        <MudIcon Icon="@Icons.Material.Rounded.TaskAlt" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge" style="background:rgba(34,197,94,0.08);color:#22C55E;border-color:rgba(34,197,94,0.1);">VERİM</span>
+                </div>
+                <div class="kpi-value">@_dashStats.TamamlananGorev</div>
+                <div class="kpi-label mt-1">Tamamlanan Görev</div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Class="pa-5 kpi-card gradient-border" @onclick='() => Nav.NavigateTo("/yetkinlik")' style="cursor:pointer;">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container" style="background:rgba(139,92,246,0.15);color:#a78bfa;">
+                        <MudIcon Icon="@Icons.Material.Rounded.MilitaryTech" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge" style="background:rgba(139,92,246,0.08);color:#a78bfa;border-color:rgba(139,92,246,0.1);">YETKİNLİK</span>
+                </div>
+                <div class="kpi-value">@_ortSv.ToString("F1")</div>
+                <div class="kpi-label mt-1">Ort. SV Seviyesi</div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <MudPaper Class="pa-5 kpi-card gradient-border" @onclick='() => Nav.NavigateTo("/senaryo-analizi")' style="cursor:pointer;">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div class="icon-container" style="@($"background:rgba({_riskRengi},0.15);color:rgb({_riskRengi});")">
+                        <MudIcon Icon="@Icons.Material.Rounded.Shield" Size="Size.Medium" />
+                    </div>
+                    <span class="kpi-badge" style="@($"background:rgba({_riskRengi},0.08);color:rgb({_riskRengi});border-color:rgba({_riskRengi},0.1);")">RİSK</span>
+                </div>
+                <div class="kpi-value" style="@($"color:rgb({_riskRengi});font-size:1.3rem;")">@_riskSeviyesi</div>
+                <div class="kpi-label mt-1">Sistem Risk Seviyesi</div>
+            </MudPaper>
+        </MudItem>
     </MudGrid>
 
-    @* === CHARTS SECTION === *@
-    <MudGrid Class="chart-container stagger-children" Spacing="4">
+    @* ── BÖLÜM 2: Grafikler ──────────────────────────────────────────── *@
+    <MudGrid Class="chart-container stagger-children mb-6" Spacing="4">
         <MudItem xs="12" md="8">
-            <MudPaper Class="pa-6" Style="min-height: 400px;">
+            <MudPaper Class="pa-6" Style="min-height:400px;">
                 <div class="section-header">
-                    <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Bakım Yoğunluk Grafiği</MudText>
+                    <MudText Typo="Typo.h6" Style="font-weight:800; letter-spacing:-0.3px;">Bakım Yoğunluk Grafiği</MudText>
                 </div>
                 <ApexCharts.ApexChart TItem="ChartData" Options="chartOptions">
-                    <ApexCharts.ApexPointSeries TItem="ChartData" Items="trendData" Name="İş Emri" SeriesType="ApexCharts.SeriesType.Area" XValue="@(e => e.Label)" YValue="@(e => e.Value)" Color="#FACC15" />
+                    <ApexCharts.ApexPointSeries TItem="ChartData" Items="trendData" Name="İş Emri"
+                        SeriesType="ApexCharts.SeriesType.Area"
+                        XValue="@(e => e.Label)" YValue="@(e => e.Value)" Color="#FACC15" />
                 </ApexCharts.ApexChart>
             </MudPaper>
         </MudItem>
         <MudItem xs="12" md="4">
-            <MudPaper Class="pa-6" Style="min-height: 400px;">
+            <MudPaper Class="pa-6" Style="min-height:400px;">
                 <div class="section-header">
-                    <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Personel Durumu</MudText>
+                    <MudText Typo="Typo.h6" Style="font-weight:800; letter-spacing:-0.3px;">Personel Durumu</MudText>
                 </div>
                 <ApexCharts.ApexChart TItem="ChartData" Options="pieOptions">
-                    <ApexCharts.ApexPointSeries TItem="ChartData" Items="pieData" Name="Personel" SeriesType="ApexCharts.SeriesType.Donut" XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
+                    <ApexCharts.ApexPointSeries TItem="ChartData" Items="pieData" Name="Personel"
+                        SeriesType="ApexCharts.SeriesType.Donut"
+                        XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
                 </ApexCharts.ApexChart>
             </MudPaper>
         </MudItem>
     </MudGrid>
 
-    @* === ATOLYE DOLULUK ORANLARI === *@
+    @* ── BÖLÜM 2b: Atölye Olgunluk Yüzdesi Grafiği ─────────────────── *@
+    @if (_atolyeOlgunlukData.Any())
+    {
+        <MudGrid Class="mb-6 stagger-children" Spacing="4">
+            <MudItem xs="12">
+                <MudPaper Class="pa-6">
+                    <div class="section-header mb-2">
+                        <MudText Typo="Typo.h6" Style="font-weight:800; letter-spacing:-0.3px;">Atölye Bazlı Personel Olgunluğu</MudText>
+                        <MudText Typo="Typo.caption" Style="color:#71717A;">
+                            Her atölyedeki personelin ortalama maks. yetkinlik seviyesi (SV / 5 × 100)
+                        </MudText>
+                    </div>
+                    <ApexCharts.ApexChart TItem="ChartData" Options="olgunlukChartOptions" Height="280">
+                        <ApexCharts.ApexPointSeries TItem="ChartData"
+                            Items="_atolyeOlgunlukData"
+                            Name="Olgunluk %"
+                            SeriesType="ApexCharts.SeriesType.Bar"
+                            XValue="@(e => e.Label)"
+                            YValue="@(e => e.Value)" />
+                    </ApexCharts.ApexChart>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @* ── BÖLÜM 3: Atölye Doluluk (formül düzeltildi) ────────────────── *@
     @if (_kullanimlar.Any())
     {
-        <MudGrid Class="mt-6 stagger-children" Spacing="4">
+        <MudGrid Class="mb-6 stagger-children" Spacing="4">
             <MudItem xs="12">
                 <MudPaper Class="pa-6">
                     <div class="section-header mb-4">
-                        <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Atölye Doluluk Oranları</MudText>
-                        <MudText Typo="Typo.caption" Style="color: #71717A;">
-                            Man-Hour / Anlık Kullanım Oranı &nbsp;·&nbsp; Kapasite = Personel × 480 dk × %%85
+                        <MudText Typo="Typo.h6" Style="font-weight:800; letter-spacing:-0.3px;">Atölye Doluluk Oranları</MudText>
+                        <MudText Typo="Typo.caption" Style="color:#71717A;">
+                            Aylık Kapasite Kullanım Oranı &nbsp;·&nbsp; personel × 20 gün × 408 dk (DevamEdiyor + Beklemede)
                         </MudText>
                     </div>
                     <MudGrid Spacing="3" Justify="Justify.FlexStart">
                         @foreach (var a in _kullanimlar)
                         {
                             <MudItem xs="6" sm="4" md="2">
-                                <div class="d-flex flex-column align-center pa-2">
-                                    <MudProgressCircular
-                                        Value="@Math.Min(a.Oran, 100)"
-                                        Size="Size.Large"
-                                        StrokeWidth="6"
-                                        Style="@($"color: {a.Renk};")" />
-                                    <MudText Typo="Typo.subtitle1" Style="@($"font-weight: 800; margin-top: 8px; color: {a.Renk};")">
+                                <div class="d-flex flex-column align-center pa-2" style="cursor:pointer;" @onclick='() => Nav.NavigateTo("/atolye-operasyon")'>
+                                    <MudProgressCircular Value="@Math.Min(a.Oran, 100)" Size="Size.Large" StrokeWidth="6"
+                                        Style="@($"color:{a.Renk};")" />
+                                    <MudText Typo="Typo.subtitle1" Style="@($"font-weight:800;margin-top:8px;color:{a.Renk};")">
                                         %@(a.Oran.ToString("F0"))
                                     </MudText>
-                                    <MudText Typo="Typo.caption" Style="color: #A1A1AA; text-align: center;">
-                                        @a.Ad
-                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color:#A1A1AA;text-align:center;">@a.Ad</MudText>
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.25);font-size:0.65rem;">@a.ToplamPersonel personel</MudText>
                                 </div>
                             </MudItem>
                         }
@@ -121,43 +173,247 @@
         </MudGrid>
     }
 
-    @* === RECENT ACTIVITY === *@
-    <MudGrid Class="mt-6 mb-8 stagger-children" Spacing="4">
+    @* ── BÖLÜM 4: Modül Hızlı Erişim ───────────────────────────────── *@
+    <MudGrid Class="mb-6 stagger-children" Spacing="4">
+        <MudItem xs="12">
+            <MudPaper Class="pa-6">
+                <div class="section-header mb-4">
+                    <MudText Typo="Typo.h6" Style="font-weight:800; letter-spacing:-0.3px;">Modül Hızlı Erişim</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#71717A;">Tüm modüllere anlık özet ve hızlı erişim</MudText>
+                </div>
+                <MudGrid Spacing="3">
+                    @* 1. Personel Sicil *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(250,204,21,0.05);border:1px solid rgba(250,204,21,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/personel-yonetimi")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.Groups" Style="color:#FACC15;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">PERSONEL SİCİL</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">@_aktifPersonel Aktif · @_izinliPersonel İzinli</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 2. Yetkinlik Matrisi *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/yetkinlik")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.MilitaryTech" Style="color:#a78bfa;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">YETKİNLİK MATRİSİ</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">@_sv3PlusPersonel personel SV3+ yetkin</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 3. Kabul İşlemleri *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/bakim-kabul")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.FlightTakeoff" Style="color:#38bdf8;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">KABUL İŞLEMLERİ</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">@_ucakSayisi uçak sistemde</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 4. İş Emri Dağıtım *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/is-emri-dagitim")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.Assignment" Style="color:#f87171;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">İŞ EMRİ DAĞITIM</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">@_atanmamisIs atanmamış iş emri</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 5. Atölye Paneli *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(250,204,21,0.05);border:1px solid rgba(250,204,21,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/atolye-operasyon")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.BuildCircle" Style="color:#FACC15;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">ATÖLYE PANELİ</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">@_dashStats.AktifBakim aktif iş emri</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 6. Zaman Çizelgesi *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/zaman-cizelgesi")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.CalendarViewWeek" Style="color:#4ade80;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">ZAMAN ÇİZELGESİ</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">@_buHaftaIs iş bu hafta aktif</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 7. Performans Analizi *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(251,146,60,0.05);border:1px solid rgba(251,146,60,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/performans-analizi")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.Analytics" Style="color:#fb923c;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">PERFORMANS ANALİZİ</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">Ort. η = @(_ortPerformans > 0 ? _ortPerformans.ToString("F2") : "—")</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 8. Yıllık Planlama *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/yillik-planlama")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.CalendarMonth" Style="color:#38bdf8;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">YILLIK PLANLAMA</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">Bu ay %@(_buAyDoluluk.ToString("F0")) kapasite kullanımı</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 9. Senaryo Analizi *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="@($"background:rgba({_riskRengi},0.05);border:1px solid rgba({_riskRengi},0.2);cursor:pointer;")"
+                                  @onclick='() => Nav.NavigateTo("/senaryo-analizi")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.Science" Style="@($"color:rgb({_riskRengi});font-size:1.6rem;")" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">SENARYO ANALİZİ</div>
+                                        <div style="@($"font-size:0.75rem;font-weight:700;color:rgb({_riskRengi});")">@_riskSeviyesi risk seviyesi</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                    @* 10. Matematiksel Model *@
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.15);cursor:pointer;"
+                                  @onclick='() => Nav.NavigateTo("/model")'>
+                            <div class="d-flex align-center justify-space-between">
+                                <div class="d-flex align-center gap-3">
+                                    <MudIcon Icon="@Icons.Material.Rounded.Functions" Style="color:#a78bfa;font-size:1.6rem;" />
+                                    <div>
+                                        <div style="font-weight:800;font-size:0.85rem;color:white;">MATEMATİKSEL MODEL</div>
+                                        <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">ILP optimizasyon · K1–K4 kısıtlar</div>
+                                    </div>
+                                </div>
+                                <MudIcon Icon="@Icons.Material.Rounded.ChevronRight" Style="color:rgba(255,255,255,0.2);" />
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── BÖLÜM 5: Son Faaliyetler (genişletilmiş) ───────────────────── *@
+    <MudGrid Class="mb-8 stagger-children" Spacing="4">
         <MudItem xs="12">
             <MudPaper Class="pa-6">
                 <div class="section-header">
-                    <MudText Typo="Typo.h6" Style="font-weight: 800; letter-spacing: -0.3px;">Son Faaliyetler</MudText>
+                    <MudText Typo="Typo.h6" Style="font-weight:800; letter-spacing:-0.3px;">Son Faaliyetler</MudText>
                 </div>
                 <MudTable Items="recentPlanlar" Hover="true" Elevation="0" Dense="true">
                     <HeaderContent>
                         <MudTh>Kuyruk No</MudTh>
                         <MudTh>Model</MudTh>
                         <MudTh>Kabul Tarihi</MudTh>
+                        <MudTh>İş Emri İlerlemesi</MudTh>
                         <MudTh>Durum</MudTh>
                     </HeaderContent>
                     <RowTemplate>
-                        <MudTd><span style="font-weight: 700; color: #FACC15;">@context.SeriNo</span></MudTd>
-                        <MudTd>@context.HeliTipi</MudTd>
-                        <MudTd Style="color: #A1A1AA;">@context.KabulTarihi.ToShortDateString()</MudTd>
+                        <MudTd><span style="font-weight:700;color:#FACC15;">@context.Plan.SeriNo</span></MudTd>
+                        <MudTd>@context.Plan.HeliTipi</MudTd>
+                        <MudTd Style="color:#A1A1AA;">@context.Plan.KabulTarihi.ToShortDateString()</MudTd>
                         <MudTd>
-                            <MudChip T="string" Color="@GetDurumColor(context.GenelDurumEnum)" Size="Size.Small" Variant="Variant.Filled">@context.GenelDurum</MudChip>
+                            <div class="d-flex align-center gap-2">
+                                <span style="font-size:0.8rem;color:rgba(255,255,255,0.6);min-width:40px;">@context.AtananIs/@context.ToplamIs</span>
+                                <MudProgressLinear
+                                    Value="@(context.ToplamIs > 0 ? context.AtananIs * 100.0 / context.ToplamIs : 0)"
+                                    Color="Color.Success" Style="height:4px;width:80px;" Class="rounded" />
+                            </div>
+                        </MudTd>
+                        <MudTd>
+                            <MudChip T="string" Color="@GetDurumColor(context.Plan.GenelDurumEnum)"
+                                     Size="Size.Small" Variant="Variant.Filled">
+                                @context.Plan.GenelDurum
+                            </MudChip>
                         </MudTd>
                     </RowTemplate>
                 </MudTable>
             </MudPaper>
         </MudItem>
     </MudGrid>
+
 </MudContainer>
 
 @code {
     private Dictionary<string, int> stats = new();
-    private List<BakimPlani> recentPlanlar = new();
+    private List<BakimPlaniSatir> recentPlanlar = new();
     private DashboardStats _dashStats = new(0, 0, 0, new());
     private List<ChartData> trendData = new();
     private List<ChartData> pieData = new();
 
     private record AtolYeKullanimDto(string Ad, double Oran, string Renk, int ToplamPersonel);
+    private record BakimPlaniSatir(BakimPlani Plan, int AtananIs, int ToplamIs);
     private List<AtolYeKullanimDto> _kullanimlar = new();
+    private List<ChartData> _atolyeOlgunlukData = new();
+
+    // KPI extras
+    private double _ortSv;
+    private string _riskSeviyesi = "—";
+    private string _riskRengi = "255,255,255";
+
+    // Modül metrikleri
+    private int _aktifPersonel;
+    private int _izinliPersonel;
+    private int _sv3PlusPersonel;
+    private int _ucakSayisi;
+    private int _atanmamisIs;
+    private int _buHaftaIs;
+    private double _ortPerformans;
+    private double _buAyDoluluk;
 
     private ApexCharts.ApexChartOptions<ChartData> chartOptions = new()
     {
@@ -177,62 +433,223 @@
         Legend = new() { Position = ApexCharts.LegendPosition.Bottom }
     };
 
+    private ApexCharts.ApexChartOptions<ChartData> olgunlukChartOptions = new()
+    {
+        Chart = new() { Toolbar = new() { Show = false }, Background = "transparent" },
+        Theme = new() { Mode = ApexCharts.Mode.Dark },
+        Grid = new() { BorderColor = "#27272A" },
+        PlotOptions = new()
+        {
+            Bar = new()
+            {
+                Horizontal = false,
+                ColumnWidth = "55%",
+                BorderRadius = 6,
+                DataLabels = new() { Position = ApexCharts.BarDataLabelPosition.Top }
+            }
+        },
+        DataLabels = new()
+        {
+            Enabled = true,
+            Formatter = "function(val) { return val.toFixed(1) + '%'; }",
+            OffsetY = -20,
+            Style = new() { FontSize = "11px", Colors = new List<string> { "#A1A1AA" } }
+        },
+        Yaxis = new List<ApexCharts.YAxis>
+        {
+            new() { Max = 100, Labels = new() { Formatter = "function(val) { return val.toFixed(0) + '%'; }" } }
+        },
+        Colors = new List<string> { "#FACC15" },
+        Tooltip = new() { Y = new() { Formatter = "function(val) { return val.toFixed(1) + '%'; }" } }
+    };
+
     protected override async Task OnInitializedAsync()
     {
         stats = await PersonelService.GetPersonelStatsAsync();
         var planlar = await BakimService.GetBakimPlanlariAsync();
-        recentPlanlar = planlar.Take(5).ToList();
         _dashStats = await BakimService.GetDashboardStatsAsync();
+
         trendData = _dashStats.HaftalikTrend
             .Select(t => new ChartData { Label = t.Gun, Value = t.Sayi })
             .ToList();
-        pieData = stats.Select(x => new ChartData { Label = x.Key, Value = (decimal?)x.Value }).ToList();
+        pieData = stats
+            .Select(x => new ChartData { Label = x.Key, Value = (decimal?)x.Value })
+            .ToList();
 
-        await HesaplaKullanimOranlariAsync();
+        await HesaplaMetriklerAsync(planlar);
+
+        // Risk seviyesi — senaryo servisi hatası dashboard'u engellemez
+        try
+        {
+            var senaryo = await PlanlamaService.SenaryoAnalizeEtAsync(
+                new SenaryoParametreleri(0, 0, 0, DateTime.Now.Year, DateTime.Now.Month));
+            _riskSeviyesi = senaryo.RiskSeviyesi;
+            _riskRengi = senaryo.RiskSeviyesi switch
+            {
+                "KRİTİK" => "239,68,68",
+                "YÜKSEK" => "249,115,22",
+                "ORTA"   => "250,204,21",
+                _        => "34,197,94"
+            };
+        }
+        catch { /* sessiz hata */ }
     }
 
-    private async Task HesaplaKullanimOranlariAsync()
+    private async Task HesaplaMetriklerAsync(List<BakimPlani> planlar)
     {
         await using var ctx = await DbFactory.CreateDbContextAsync();
 
         var kayitlar = await ctx.BakimKontrolKayitlari
             .Include(k => k.ParcaSablonu)
-            .Where(k => k.Durum == "DevamEdiyor")
             .AsNoTracking()
             .ToListAsync();
 
-        var personeller = await ctx.Personeller.AsNoTracking().ToListAsync();
-        var atolyeler  = await ctx.BakimGruplari.AsNoTracking().ToListAsync();
+        var personeller  = await ctx.Personeller.AsNoTracking().ToListAsync();
+        var atolyeler    = await ctx.BakimGruplari.AsNoTracking().ToListAsync();
+        var yetkinlikler = await ctx.Yetkinlikler.AsNoTracking().ToListAsync();
 
+        // ── Atölye doluluk (DÜZELTİLDİ: aylık kapasite, DevamEdiyor+Beklemede) ──
         _kullanimlar = atolyeler
             .Select(a =>
             {
                 var isYuku = kayitlar
-                    .Where(k => k.ParcaSablonu?.BakimGrubuId == a.Id)
-                    .Sum(k => (k.ParcaSablonu?.IslemSure ?? 60) + (k.ParcaSablonu?.HazirlikSuresi ?? 15));
+                    .Where(k => k.ParcaSablonu?.BakimGrubuId == a.Id
+                             && (k.Durum == "DevamEdiyor" || k.Durum == "Beklemede"))
+                    .Sum(k => k.ParcaSablonu?.IslemSure ?? 60);
 
                 int aktif = personeller.Count(p =>
-                    p.BakimGrubuId == a.Id &&
-                    p.Durum == "Aktif" &&
-                    !(p.IzinBaslangic.HasValue && p.IzinBitis.HasValue &&
+                    p.BakimGrubuId == a.Id && p.Durum == "Aktif" &&
+                    !(p.IzinBaslangic.HasValue &&
                       DateTime.UtcNow.Date >= p.IzinBaslangic.Value.Date &&
-                      DateTime.UtcNow.Date <= p.IzinBitis.Value.Date));
+                      (!p.IzinBitis.HasValue || DateTime.UtcNow.Date <= p.IzinBitis.Value.Date)));
 
-                double kapasite = aktif > 0 ? aktif * 480 * 0.85 : 480;
-                double oran = Math.Min(Math.Round(isYuku / kapasite * 100, 1), 150);
-                string renk = oran >= 100 ? "#ef4444" : oran >= 86 ? "#facc15" : oran >= 61 ? "#3b82f6" : "#22c55e";
+                double kapasite = aktif > 0 ? aktif * 20.0 * 408 : 408 * 20.0;
+                double oran = Math.Min(Math.Round(isYuku / kapasite * 100, 1), 100);
+                string renk = oran >= 90 ? "#ef4444" : oran >= 70 ? "#facc15" : oran >= 40 ? "#3b82f6" : "#22c55e";
                 return new AtolYeKullanimDto(a.GrupAdi, oran, renk, aktif);
             })
             .Where(x => x.ToplamPersonel > 0)
+            .ToList();
+
+        // ── Atölye bazlı olgunluk yüzdesi ────────────────────────────────────
+        // Olgunluk = her personelin kendi yetkinliklerindeki maks. SV'nin atölye ortalaması / 5 × 100
+        // Personel ↔ Atölye eşleşmesi: AtolyeKodu string veya BakimGrubuId FK (hangisi doluysa)
+        _atolyeOlgunlukData = atolyeler
+            .Select(a =>
+            {
+                var pIds = personeller
+                    .Where(p => p.AtolyeKodu == a.AtolyeKodu
+                             || p.BakimGrubuId == a.Id)
+                    .Select(p => p.Id)
+                    .Distinct()
+                    .ToHashSet();
+
+                double olgunluk = 0;
+                if (pIds.Count > 0)
+                {
+                    // Her personel için kendi en yüksek SV'si (yetkinliği olmayan → 1)
+                    var svOrtalama = pIds
+                        .Select(pid =>
+                        {
+                            var maxSv = yetkinlikler
+                                .Where(y => y.PersonelId == pid)
+                                .Select(y => y.YetkinlikSeviyesi)
+                                .DefaultIfEmpty(1)
+                                .Max();
+                            return (double)maxSv;
+                        })
+                        .Average();
+                    olgunluk = Math.Round(svOrtalama / 5.0 * 100, 1);
+                }
+
+                return new ChartData { Label = a.GrupAdi, Value = (decimal)olgunluk };
+            })
+            .ToList();
+
+        // ── Ort. SV ──────────────────────────────────────────────────────────
+        _ortSv = await ctx.Yetkinlikler.AnyAsync()
+            ? Math.Round(await ctx.Yetkinlikler.AverageAsync(y => (double)y.YetkinlikSeviyesi), 2)
+            : 0;
+
+        // ── Personel breakdown ───────────────────────────────────────────────
+        _aktifPersonel  = personeller.Count(p => p.Durum == "Aktif");
+        _izinliPersonel = personeller.Count(p => p.Durum == "İzinli");
+
+        // ── SV3+ personel ─────────────────────────────────────────────────────
+        _sv3PlusPersonel = await ctx.Yetkinlikler
+            .Where(y => y.YetkinlikSeviyesi >= 3)
+            .Select(y => y.PersonelId)
+            .Distinct()
+            .CountAsync();
+
+        // ── Uçak sayısı (distinct SeriNo) ────────────────────────────────────
+        _ucakSayisi = await ctx.BakimPlanlari
+            .Select(b => b.SeriNo)
+            .Distinct()
+            .CountAsync();
+
+        // ── Atanmamış iş emri ─────────────────────────────────────────────────
+        _atanmamisIs = kayitlar.Count(k =>
+            k.Durum == "Beklemede" && !k.AtananPersonelId.HasValue);
+
+        // ── Bu hafta aktif iş ─────────────────────────────────────────────────
+        var haftaBasi = DateTime.UtcNow.Date.AddDays(-(int)DateTime.UtcNow.DayOfWeek);
+        var haftaSonu = haftaBasi.AddDays(7);
+        _buHaftaIs = kayitlar.Count(k =>
+            k.IslemTarihi >= haftaBasi && k.IslemTarihi < haftaSonu);
+
+        // ── Ort. performans katsayısı (η = gerçek/planlanan süre) ────────────
+        var tamamlananlar = kayitlar.Where(k =>
+            k.Durum == "Tamamlandi" &&
+            k.TamamlanmaTarihi.HasValue &&
+            k.IslemTarihi > DateTime.MinValue &&
+            (k.ParcaSablonu?.IslemSure ?? 0) > 0).ToList();
+
+        if (tamamlananlar.Any())
+        {
+            _ortPerformans = Math.Round(tamamlananlar.Average(k =>
+            {
+                double gercek    = (k.TamamlanmaTarihi!.Value - k.IslemTarihi).TotalMinutes;
+                double planlanan = k.ParcaSablonu!.IslemSure;
+                return Math.Max(0.1, gercek / planlanan);
+            }), 2);
+        }
+
+        // ── Bu ay doluluk ─────────────────────────────────────────────────────
+        var buAy  = DateTime.UtcNow.Month;
+        var buYil = DateTime.UtcNow.Year;
+        var tahmin = await ctx.YillikIsgucuTahminleri
+            .FirstOrDefaultAsync(t => t.Yil == buYil && t.Ay == buAy);
+
+        if (tahmin != null)
+        {
+            _buAyDoluluk = Math.Round(tahmin.DolulukOrani, 1);
+        }
+        else if (_aktifPersonel > 0)
+        {
+            int bekleyenDk = kayitlar
+                .Where(k => k.Durum == "Beklemede")
+                .Sum(k => k.ParcaSablonu?.IslemSure ?? 60);
+            _buAyDoluluk = Math.Round(bekleyenDk / (double)(_aktifPersonel * 20 * 408) * 100, 1);
+        }
+
+        // ── Son faaliyetler (atanan/toplam iş emri ile birlikte) ─────────────
+        recentPlanlar = planlar.Take(5)
+            .Select(p =>
+            {
+                int toplam = kayitlar.Count(k => k.BakimPlaniId == p.Id);
+                int atanan = kayitlar.Count(k => k.BakimPlaniId == p.Id && k.AtananPersonelId.HasValue);
+                return new BakimPlaniSatir(p, atanan, toplam);
+            })
             .ToList();
     }
 
     private Color GetDurumColor(BakimDurumu durum) => durum switch
     {
-        BakimDurumu.Beklemede => Color.Info,
+        BakimDurumu.Beklemede   => Color.Info,
         BakimDurumu.DevamEdiyor => Color.Warning,
-        BakimDurumu.Tamamlandi => Color.Success,
-        _ => Color.Default
+        BakimDurumu.Tamamlandi  => Color.Success,
+        _                        => Color.Default
     };
 
     public class ChartData { public string Label { get; set; } = ""; public decimal? Value { get; set; } }

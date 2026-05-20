@@ -28,6 +28,7 @@ namespace MroPlan.Services
         public async Task KartTamamlandiAsync(int personelId, int parcaSablonuId, int kartId)
         {
             await using var ctx = await factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
 
             var personel = await ctx.Personeller.FindAsync(personelId);
             var parca = await ctx.ParcaSablonlari.FindAsync(parcaSablonuId);
@@ -48,7 +49,6 @@ namespace MroPlan.Services
                     TamamlananKartSayisi = 0
                 };
                 ctx.Yetkinlikler.Add(yetkinlik);
-                await ctx.SaveChangesAsync();
             }
 
             yetkinlik.TamamlananKartSayisi++;
@@ -56,10 +56,10 @@ namespace MroPlan.Services
             // SV yükseltme kontrolü
             if (SvEsikler.SvYukseltilebilir(yetkinlik.YetkinlikSeviyesi, yetkinlik.TamamlananKartSayisi))
             {
-                var eskiSv = yetkinlik.YetkinlikSeviyesi;
                 yetkinlik.YetkinlikSeviyesi++;
 
                 await ctx.SaveChangesAsync();
+                await tx.CommitAsync();
 
                 var svMesaj = yetkinlik.YetkinlikSeviyesi == 5
                     ? $"{personel.AdSoyad} artık {parca.ParcaAdi} için tam yetkin (SV5)!"
@@ -72,15 +72,17 @@ namespace MroPlan.Services
                     Turu = BildirimTuru.SistemBilgisi,
                     Seviye = yetkinlik.YetkinlikSeviyesi == 5 ? BildirimSeviye.Kritik : BildirimSeviye.Uyari
                 });
-
-                // 1 kart kala uyarısı için kontrol
                 return;
             }
 
             // Sonraki SV'ye 1 kart kaldıysa uyarı gönder
             var sonrakiEsik = SvEsikler.KumulatifEsik(yetkinlik.YetkinlikSeviyesi) + SvEsikler.SonrakiEsik(yetkinlik.YetkinlikSeviyesi);
-            if (yetkinlik.YetkinlikSeviyesi < 5 && sonrakiEsik - yetkinlik.TamamlananKartSayisi == 1)
-            {
+            bool birKartKaldi = yetkinlik.YetkinlikSeviyesi < 5 && sonrakiEsik - yetkinlik.TamamlananKartSayisi == 1;
+
+            await ctx.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            if (birKartKaldi)
                 bildirimServisi.Ekle(new Bildirim
                 {
                     Baslik = "SV Artışına 1 Kart Kaldı",
@@ -88,9 +90,6 @@ namespace MroPlan.Services
                     Turu = BildirimTuru.SistemBilgisi,
                     Seviye = BildirimSeviye.Uyari
                 });
-            }
-
-            await ctx.SaveChangesAsync();
         }
 
         public async Task GelistirmeModunaAlAsync(BakimKontrolKaydi kayit, int gelistirmePersonelId)
@@ -230,7 +229,8 @@ namespace MroPlan.Services
             }
 
             kayit.Tamamlandi = true;
-            kayit.TamamlanmaTarihi = DateTime.UtcNow;
+            // PlanlananBitis varsa onu kullan (test/otomatik), yoksa şimdiki zaman
+            kayit.TamamlanmaTarihi = kayit.PlanlananBitis?.ToUniversalTime() ?? DateTime.UtcNow;
             kayit.IlerlemeYuzdesi = 100;
 
             // Yetkinlik seviyesini güncelle (Eğer eğitim bir parça ile ilişkiliyse)
@@ -241,8 +241,25 @@ namespace MroPlan.Services
                 {
                     if (ytk.YetkinlikSeviyesi < egitim.HedefYetkinlikSeviyesi)
                     {
-                        var eski = ytk.YetkinlikSeviyesi;
+                        int eskiSv = ytk.YetkinlikSeviyesi;
                         ytk.YetkinlikSeviyesi = egitim.HedefYetkinlikSeviyesi;
+                        int yeniBaseline = SvEsikler.KumulatifEsik(egitim.HedefYetkinlikSeviyesi);
+                        if (ytk.TamamlananKartSayisi < yeniBaseline)
+                            ytk.TamamlananKartSayisi = yeniBaseline;
+                        // Sertifika otomatik tanımla
+                        ytk.SertifikaTarihi  = kayit.TamamlanmaTarihi;
+                        ytk.SertifikaBelgeNo = $"CERT-{ytk.SicilNo}-SV{egitim.HedefYetkinlikSeviyesi}-{(ytk.ParcaPN ?? "PARCA").Replace(" ", "")}-{kayit.TamamlanmaTarihi.Year}";
+                        ctx.YetkinlikGecmisleri.Add(new YetkinlikGecmisi
+                        {
+                            YetkinlikId      = ytk.Id,
+                            SicilNo          = ytk.SicilNo,
+                            ParcaPN          = ytk.ParcaPN,
+                            EskiSeviye       = eskiSv,
+                            YeniSeviye       = egitim.HedefYetkinlikSeviyesi,
+                            IslemYapanSicil  = "sistem",
+                            IslemTarihi      = DateTime.UtcNow,
+                            IslemNotu        = $"Eğitim tamamlandı: {egitim.Ad}"
+                        });
                     }
                 }
                 else
@@ -252,20 +269,53 @@ namespace MroPlan.Services
                     var parca = await ctx.ParcaSablonlari.FindAsync(egitim.ParcaSablonuId.Value);
                     if (personel != null && parca != null)
                     {
+                        int hedefSv = egitim.HedefYetkinlikSeviyesi;
+                        string belgeNo = $"CERT-{personel.SicilNo}-SV{hedefSv}-{(parca.ParcaPN ?? "PARCA").Replace(" ", "")}-{kayit.TamamlanmaTarihi.Year}";
                         ctx.Yetkinlikler.Add(new Yetkinlik
                         {
-                            PersonelId = personelId,
-                            ParcaSablonuId = egitim.ParcaSablonuId.Value,
-                            SicilNo = personel.SicilNo,
-                            ParcaPN = parca.ParcaPN,
-                            YetkinlikSeviyesi = egitim.HedefYetkinlikSeviyesi,
-                            TamamlananKartSayisi = 0
+                            PersonelId           = personelId,
+                            ParcaSablonuId       = egitim.ParcaSablonuId.Value,
+                            SicilNo              = personel.SicilNo,
+                            ParcaPN              = parca.ParcaPN,
+                            YetkinlikSeviyesi    = hedefSv,
+                            TamamlananKartSayisi = SvEsikler.KumulatifEsik(hedefSv),
+                            SertifikaTarihi      = kayit.TamamlanmaTarihi,
+                            SertifikaBelgeNo     = belgeNo
                         });
+                        await ctx.SaveChangesAsync();
+                        var yeniYtk = await ctx.Yetkinlikler.FirstOrDefaultAsync(y =>
+                            y.PersonelId == personelId && y.ParcaSablonuId == egitim.ParcaSablonuId.Value);
+                        if (yeniYtk != null)
+                        {
+                            ctx.YetkinlikGecmisleri.Add(new YetkinlikGecmisi
+                            {
+                                YetkinlikId     = yeniYtk.Id,
+                                SicilNo         = yeniYtk.SicilNo,
+                                ParcaPN         = yeniYtk.ParcaPN,
+                                EskiSeviye      = 0,
+                                YeniSeviye      = hedefSv,
+                                IslemYapanSicil = "sistem",
+                                IslemTarihi     = DateTime.UtcNow,
+                                IslemNotu       = $"Eğitim tamamlandı: {egitim.Ad}"
+                            });
+                        }
                     }
                 }
             }
 
             await ctx.SaveChangesAsync();
+
+            // Aktif eğitim kalmadıysa personeli Aktif'e çek
+            bool kalanEgitimVar = await ctx.PersonelEgitimleri
+                .AnyAsync(pe => pe.PersonelId == personelId && !pe.Tamamlandi);
+            if (!kalanEgitimVar)
+            {
+                var personelEgitimde = await ctx.Personeller.FindAsync(personelId);
+                if (personelEgitimde != null && personelEgitimde.Durum == nameof(PersonelDurumu.Egitimde))
+                    personelEgitimde.Durum = nameof(PersonelDurumu.Aktif);
+                await ctx.SaveChangesAsync();
+            }
+
             bildirimServisi.Ekle(new Bildirim
             {
                 Baslik = "Eğitim Tamamlandı",
@@ -358,6 +408,7 @@ namespace MroPlan.Services
         public async Task UpsertAsync(Yetkinlik yetkinlik, string guncelleyenSicil = "sistem")
         {
             await using var ctx = await factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
 
             yetkinlik.GuncellenmeTarihi = DateTime.UtcNow;
             yetkinlik.GuncelleyenSicil = guncelleyenSicil;
@@ -386,9 +437,6 @@ namespace MroPlan.Services
             {
                 var eskiSeviye = existing.YetkinlikSeviyesi;
                 existing.YetkinlikSeviyesi = yetkinlik.YetkinlikSeviyesi;
-                existing.SertifikaTarihi = yetkinlik.SertifikaTarihi;
-                existing.GecerlilikTarihi = yetkinlik.GecerlilikTarihi;
-                existing.SertifikaBelgeNo = yetkinlik.SertifikaBelgeNo;
                 existing.Aciklama = yetkinlik.Aciklama;
                 existing.GuncellenmeTarihi = DateTime.UtcNow;
                 existing.GuncelleyenSicil = guncelleyenSicil;
@@ -410,6 +458,7 @@ namespace MroPlan.Services
             }
 
             await ctx.SaveChangesAsync();
+            await tx.CommitAsync();
         }
 
         public async Task DeleteAsync(int id, string guncelleyenSicil = "sistem")
@@ -450,7 +499,7 @@ namespace MroPlan.Services
             
             // 1. O atölyedeki personelleri getir
             var personeller = await ctx.Personeller
-                .Where(p => p.BakimGrubuId == atolyeId && p.Durum == nameof(PersonelDurum.Aktif))
+                .Where(p => p.BakimGrubuId == atolyeId && p.Durum == nameof(PersonelDurumu.Aktif))
                 .ToListAsync();
 
             if (!personeller.Any()) return new List<GelisimYolHaritasi>();
@@ -563,7 +612,7 @@ namespace MroPlan.Services
             // Load all required data upfront
             var tumPersoneller = await ctx.Personeller
                 .Include(p => p.BakimGrubu)
-                .Where(p => p.Durum == nameof(PersonelDurum.Aktif))
+                .Where(p => p.Durum == nameof(PersonelDurumu.Aktif))
                 .ToListAsync();
 
             var tumYetkinlikler = await ctx.Yetkinlikler.ToListAsync();
@@ -682,7 +731,9 @@ namespace MroPlan.Services
             return yolHaritasi.Values.OrderBy(h => h.AtolyeAdi).ThenByDescending(h => h.Skor).ToList();
         }
 
-        public async Task<int> PersonelEgitimlerOnayla(List<(int PersonelId, int EgitimModuluId)> atamalar)
+        public async Task<int> PersonelEgitimlerOnayla(
+            List<(int PersonelId, int EgitimModuluId)> atamalar,
+            Dictionary<(int, int), DateTime>? tahminiTarihler = null)
         {
             await using var ctx = await factory.CreateDbContextAsync();
             int kayitSayisi = 0;
@@ -693,14 +744,32 @@ namespace MroPlan.Services
                     .AnyAsync(pe => pe.PersonelId == personelId && pe.EgitimModuluId == egitimModuluId);
                 if (zatenVar) continue;
 
+                // Eğitim süresini mevcut SV'ye göre hesapla
+                var modul = await ctx.EgitimModulleri.FindAsync(egitimModuluId);
+                var ytkSure = modul?.ParcaSablonuId.HasValue == true
+                    ? await ctx.Yetkinlikler.FirstOrDefaultAsync(y =>
+                        y.PersonelId == personelId && y.ParcaSablonuId == modul.ParcaSablonuId.Value)
+                    : null;
+                int mevcutSvSure = ytkSure?.YetkinlikSeviyesi ?? 0;
+                int surGun = SvEsikler.EgitimSuresiGun(mevcutSvSure);
+
                 ctx.PersonelEgitimleri.Add(new PersonelEgitim
                 {
                     PersonelId = personelId,
                     EgitimModuluId = egitimModuluId,
                     IlerlemeYuzdesi = 0,
                     Tamamlandi = false,
-                    TamamlanmaTarihi = DateTime.MinValue
+                    TamamlanmaTarihi = DateTime.MinValue,
+                    PlanlananBaslangic = DateTime.UtcNow,
+                    PlanlananBitis = tahminiTarihler?.GetValueOrDefault((personelId, egitimModuluId))
+                                     ?? DateTime.UtcNow.AddDays(surGun)
                 });
+
+                // Personel durumunu Egitimde yap
+                var personel = await ctx.Personeller.FindAsync(personelId);
+                if (personel != null && personel.Durum == nameof(PersonelDurumu.Aktif))
+                    personel.Durum = nameof(PersonelDurumu.Egitimde);
+
                 kayitSayisi++;
             }
 
@@ -717,6 +786,169 @@ namespace MroPlan.Services
             }
 
             return kayitSayisi;
+        }
+
+        public async Task<List<KapsamaAnalizi>> GetKapsamaAnaliziAsync()
+        {
+            await using var ctx = await factory.CreateDbContextAsync();
+            var gruplar      = await ctx.BakimGruplari.AsNoTracking().ToListAsync();
+            var personeller  = await ctx.Personeller.AsNoTracking().ToListAsync();
+            var parcalar     = await ctx.ParcaSablonlari.AsNoTracking().ToListAsync();
+            var yetkinlikler = await ctx.Yetkinlikler
+                .Select(y => new { y.PersonelId, y.ParcaSablonuId, y.YetkinlikSeviyesi })
+                .AsNoTracking().ToListAsync();
+
+            var result = new List<KapsamaAnalizi>();
+            foreach (var g in gruplar)
+            {
+                var pIds         = personeller.Where(p => p.BakimGrubuId == g.Id).Select(p => p.Id).ToHashSet();
+                int toplamPersonel = pIds.Count;
+                var gParcalar    = parcalar.Where(p => p.BakimGrubuId == g.Id);
+
+                foreach (var p in gParcalar)
+                {
+                    var band  = yetkinlikler.Where(y => pIds.Contains(y.PersonelId) && y.ParcaSablonuId == p.Id).ToList();
+                    int sv1   = band.Count(y => y.YetkinlikSeviyesi == 1);
+                    int sv2   = band.Count(y => y.YetkinlikSeviyesi == 2);
+                    int sv3p  = band.Count(y => y.YetkinlikSeviyesi >= 3);
+                    int sv4p  = band.Count(y => y.YetkinlikSeviyesi >= 4);
+                    bool pipeline = (sv1 + sv2) > 0;
+                    double oran   = toplamPersonel > 0 ? (double)sv3p / toplamPersonel : 0;
+
+                    string risk = sv3p == 0 && !pipeline  ? "ACİL"
+                                : sv3p == 0               ? "KRİTİK"
+                                : sv3p == 1 && oran < 0.15 && !pipeline ? "KRİTİK"
+                                : sv3p == 1               ? "YÜKSEK"
+                                : sv3p == 2 && oran < 0.40 ? "ORTA"
+                                : sv4p == 0               ? "İYİ"
+                                :                           "TAMAM";
+
+                    result.Add(new KapsamaAnalizi(
+                        g.GrupAdi, p.ParcaAdi, p.ParcaPN ?? "",
+                        p.HeliTipi ?? "", toplamPersonel,
+                        sv1, sv2, sv3p, sv4p, pipeline, risk));
+                }
+            }
+
+            return [.. result.OrderBy(r => r.RiskSeviyesi switch {
+                "ACİL"   => 0, "KRİTİK" => 1, "YÜKSEK" => 2,
+                "ORTA"   => 3, "İYİ"    => 4, _         => 5 })];
+        }
+
+        public async Task<List<EgitimCizelgesiItem>> GetEgitimCizelgesiAsync()
+        {
+            await using var ctx = await factory.CreateDbContextAsync();
+            var kayitlar = await ctx.PersonelEgitimleri
+                .Include(pe => pe.Personel).ThenInclude(p => p!.BakimGrubu)
+                .Include(pe => pe.EgitimModulu).ThenInclude(e => e!.ParcaSablonu)
+                .AsNoTracking().ToListAsync();
+
+            var yetkinlikler = await ctx.Yetkinlikler.AsNoTracking().ToListAsync();
+            var bugun = DateTime.UtcNow;
+
+            return kayitlar.Select(pe =>
+            {
+                var ytk = yetkinlikler.FirstOrDefault(y =>
+                    y.PersonelId == pe.PersonelId &&
+                    y.ParcaSablonuId == pe.EgitimModulu!.ParcaSablonuId);
+                int hedefSv   = pe.EgitimModulu?.HedefYetkinlikSeviyesi ?? 2;
+                // Tamamlanan eğitimlerde yetkinlik zaten hedefSv'ye yükseldi;
+                // geçmiş gösterimi için "başladığı" seviyeyi hedefSv-1 olarak hesapla
+                int mevcutSv  = pe.Tamamlandi
+                    ? Math.Max(0, hedefSv - 1)
+                    : (ytk?.YetkinlikSeviyesi ?? 0);
+
+                // Kümülatif eşik dahil doğru kalan kart hesabı
+                int threshold = SvEsikler.KumulatifEsik(mevcutSv) + SvEsikler.SonrakiEsik(mevcutSv);
+                int done      = ytk?.TamamlananKartSayisi ?? 0;
+                int kalanKart = Math.Max(1, threshold - done);
+
+                DateTime bas  = pe.PlanlananBaslangic ?? bugun;
+                DateTime bit  = pe.PlanlananBitis     ?? bugun.AddDays(SvEsikler.EgitimSuresiGun(mevcutSv));
+                string renk   = hedefSv switch { 1 => "#a855f7", 2 => "#3B82F6", 3 => "#F59E0B", 4 => "#10B981", _ => "#FACC15" };
+
+                // Gerçek zamanlı ilerleme yüzdesi (YetkinlikSayfasi ile aynı formül)
+                int esik     = SvEsikler.SonrakiEsik(mevcutSv);
+                int baseline = SvEsikler.KumulatifEsik(mevcutSv);
+                int pct      = pe.Tamamlandi ? 100
+                               : esik > 0 && esik != int.MaxValue
+                                 ? Math.Min(100, Math.Max(0, (done - baseline) * 100 / esik))
+                                 : 0;
+
+                return new EgitimCizelgesiItem(
+                    pe.PersonelId,
+                    pe.Personel?.AdSoyad ?? "?",
+                    pe.Personel?.BakimGrubu?.GrupAdi ?? "",
+                    pe.EgitimModulu?.Ad ?? "",
+                    pe.EgitimModulu?.ParcaSablonu?.ParcaAdi ?? "",
+                    hedefSv,
+                    pe.EgitimModuluId,
+                    ToMs(bas), ToMs(bit),
+                    pe.Tamamlandi, pct, renk,
+                    pe.Tamamlandi ? pe.TamamlanmaTarihi : null,
+                    mevcutSv);
+            }).ToList();
+
+            static long ToMs(DateTime dt) =>
+                new DateTimeOffset(dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime())
+                    .ToUnixTimeMilliseconds();
+        }
+
+        public async Task<EgitimModulu> EnsureModulAsync(int parcaId, int hedefSv)
+        {
+            await using var ctx = await factory.CreateDbContextAsync();
+            var modul = await ctx.EgitimModulleri
+                .FirstOrDefaultAsync(m => m.ParcaSablonuId == parcaId && m.HedefYetkinlikSeviyesi == hedefSv);
+            if (modul == null)
+            {
+                var parca = await ctx.ParcaSablonlari.FindAsync(parcaId);
+                modul = new EgitimModulu
+                {
+                    Ad                     = $"{parca?.ParcaAdi ?? "Parça"} - SV{hedefSv} Eğitimi",
+                    HedefYetkinlikSeviyesi = hedefSv,
+                    ParcaSablonuId         = parcaId,
+                    Kategori               = "OJT",
+                    Aciklama               = $"Otomatik oluşturuldu: SV{hedefSv - 1} → SV{hedefSv} geçiş eğitimi"
+                };
+                ctx.EgitimModulleri.Add(modul);
+                await ctx.SaveChangesAsync();
+            }
+            return modul;
+        }
+
+        public async Task<HashSet<(int PersonelId, int ParcaSablonuId)>> GetAktifEgitimParcalariAsync()
+        {
+            await using var ctx = await factory.CreateDbContextAsync();
+            var kayitlar = await ctx.PersonelEgitimleri
+                .Include(pe => pe.EgitimModulu)
+                .Where(pe => !pe.Tamamlandi && pe.EgitimModulu!.ParcaSablonuId.HasValue)
+                .Select(pe => new { pe.PersonelId, pe.EgitimModulu!.ParcaSablonuId })
+                .AsNoTracking()
+                .ToListAsync();
+            return kayitlar.Select(x => (x.PersonelId, x.ParcaSablonuId!.Value)).ToHashSet();
+        }
+
+        public async Task AtamaKaldirAsync(int personelId, int egitimModuluId)
+        {
+            await using var ctx = await factory.CreateDbContextAsync();
+            var kayit = await ctx.PersonelEgitimleri
+                .FirstOrDefaultAsync(pe => pe.PersonelId == personelId && pe.EgitimModuluId == egitimModuluId);
+            if (kayit != null)
+            {
+                ctx.PersonelEgitimleri.Remove(kayit);
+                await ctx.SaveChangesAsync();
+
+                // Aktif eğitim kalmadıysa personeli Aktif'e çek
+                bool kalanEgitimVar = await ctx.PersonelEgitimleri
+                    .AnyAsync(pe => pe.PersonelId == personelId && !pe.Tamamlandi);
+                if (!kalanEgitimVar)
+                {
+                    var personel = await ctx.Personeller.FindAsync(personelId);
+                    if (personel != null && personel.Durum == nameof(PersonelDurumu.Egitimde))
+                        personel.Durum = nameof(PersonelDurumu.Aktif);
+                    await ctx.SaveChangesAsync();
+                }
+            }
         }
     }
 }

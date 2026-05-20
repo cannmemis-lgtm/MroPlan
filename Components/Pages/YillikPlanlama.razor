@@ -1,0 +1,173 @@
+@page "/yillik-planlama"
+@using MroPlan.Services
+@inject IYillikPlanlamaService PlanlamaService
+@inject ISnackbar Snackbar
+
+<PageTitle>Yıllık İş Gücü Planlaması</PageTitle>
+
+<div class="pa-6">
+    <div class="d-flex align-center justify-space-between mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Style="font-weight:900; color:#FACC15; letter-spacing:-1px;">YILLIK İŞ GÜCÜ PLANLAMASI</MudText>
+            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.4);">12 aylık talep tahmini & kapasite analizi</MudText>
+        </div>
+        <div class="d-flex align-center gap-3">
+            <MudSelect T="int" @bind-Value="_yil" Label="Yıl" Variant="Variant.Outlined" Dense="true"
+                       Style="width:120px; color:white;">
+                @for (int y = DateTime.Now.Year - 1; y <= DateTime.Now.Year + 2; y++)
+                {
+                    <MudSelectItem Value="y">@y</MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Rounded.Refresh"
+                       OnClick="YukleAsync" Style="font-weight:900;">YENİLE</MudButton>
+            @if (_tahminler.Any())
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Rounded.Save"
+                           OnClick="KaydetAsync" Disabled="_kaydediliyor" Style="font-weight:900;">
+                    @(_kaydediliyor ? "KAYDEDİLİYOR…" : "KAYDET")
+                </MudButton>
+            }
+        </div>
+    </div>
+
+    @if (_yukleniyor)
+    {
+        <div class="d-flex justify-center pa-12">
+            <MudProgressCircular Color="Color.Warning" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else if (_tahminler.Any())
+    {
+        @* KPI Kartları *@
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="3">
+                <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(250,204,21,0.08); border:1px solid rgba(250,204,21,0.2);">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:1px;">YILLIK TOPLAM İHTİYAÇ</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#FACC15;">@_tahminler.Sum(t => t.TahminiIsGucuIhtiyaci) <span style="font-size:1rem;">p-gün</span></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2);">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:1px;">YILLIK KAPASİTE</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#38bdf8;">@_tahminler.Sum(t => t.MevcutKapasite) <span style="font-size:1rem;">p-gün</span></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2);">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:1px;">AŞIM OLAN AY</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#f87171;">@_tahminler.Count(t => t.AsimdaVar)</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudPaper Class="pa-4 rounded-xl" Style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.2);">
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:1px;">ORT. DOLULUK</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#4ade80;">%@Math.Round(_tahminler.Average(t => t.DolulukYuzdesi), 1)</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Grafik *@
+        <MudPaper Class="pa-6 mb-6 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06);">
+            <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:16px;">TALEP vs KAPASİTE (Personel-Gün)</MudText>
+            <ApexCharts.ApexChart TItem="AylikTahminSonuc"
+                       Options="_chartOptions"
+                       Height="340">
+                <ApexCharts.ApexPointSeries TItem="AylikTahminSonuc"
+                                 Items="_tahminler"
+                                 SeriesType="ApexCharts.SeriesType.Bar"
+                                 Name="Talep (İhtiyaç)"
+                                 XValue="@(e => e.AyAdi)"
+                                 YValue="@(e => (decimal?)e.TahminiIsGucuIhtiyaci)"
+                                 Color="#FACC15" />
+                <ApexCharts.ApexPointSeries TItem="AylikTahminSonuc"
+                                 Items="_tahminler"
+                                 SeriesType="ApexCharts.SeriesType.Line"
+                                 Name="Kapasite"
+                                 XValue="@(e => e.AyAdi)"
+                                 YValue="@(e => (decimal?)e.MevcutKapasite)"
+                                 Color="#38bdf8" />
+            </ApexCharts.ApexChart>
+        </MudPaper>
+
+        @* Tablo *@
+        <MudPaper Class="pa-6 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06);">
+            <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:16px;">AYLIK DETAY</MudText>
+            <MudTable Items="_tahminler" Dense="true" Hover="true"
+                      Style="background:transparent;"
+                      RowStyle="border-bottom:1px solid rgba(255,255,255,0.04);">
+                <HeaderContent>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-weight:900; font-size:0.7rem;">AY</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-weight:900; font-size:0.7rem;">TAHMİNİ İHTİYAÇ</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-weight:900; font-size:0.7rem;">KAPASİTE</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-weight:900; font-size:0.7rem;">DOLULUK</MudTh>
+                    <MudTh Style="color:rgba(255,255,255,0.4); font-weight:900; font-size:0.7rem;">DURUM</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="color:white; font-weight:700;">@context.AyAdi @_yil</MudTd>
+                    <MudTd Style="color:#FACC15; font-weight:700;">@context.TahminiIsGucuIhtiyaci p-gün</MudTd>
+                    <MudTd Style="color:#38bdf8; font-weight:700;">@context.MevcutKapasite p-gün</MudTd>
+                    <MudTd>
+                        <MudProgressLinear Value="@(Math.Min(context.DolulukYuzdesi, 100.0))"
+                                           Color="@(context.AsimdaVar ? Color.Error : Color.Success)"
+                                           Class="rounded" Style="height:6px;" />
+                        <MudText Typo="Typo.caption" Style="@($"color:{(context.AsimdaVar ? "#f87171" : "#4ade80")}; font-weight:700;")">%@context.DolulukYuzdesi</MudText>
+                    </MudTd>
+                    <MudTd>
+                        @if (context.AsimdaVar)
+                        {
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small" Style="font-weight:700; font-size:0.65rem;">AŞIM</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Style="font-weight:700; font-size:0.65rem;">NORMAL</MudChip>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private int _yil = DateTime.Now.Year;
+    private bool _yukleniyor = true;
+    private bool _kaydediliyor = false;
+    private List<AylikTahminSonuc> _tahminler = [];
+
+    private ApexCharts.ApexChartOptions<AylikTahminSonuc> _chartOptions = new()
+    {
+        Chart = new() { Background = "transparent", ForeColor = "rgba(255,255,255,0.6)", Toolbar = new() { Show = false } },
+        Theme = new() { Mode = ApexCharts.Mode.Dark },
+        Grid = new() { BorderColor = "rgba(255,255,255,0.05)" }
+    };
+
+    protected override async Task OnInitializedAsync() => await YukleAsync();
+
+    private async Task YukleAsync()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+        _tahminler = await PlanlamaService.TahminHesaplaAsync(_yil);
+        _yukleniyor = false;
+    }
+
+    private async Task KaydetAsync()
+    {
+        _kaydediliyor = true;
+        StateHasChanged();
+        try
+        {
+            await PlanlamaService.TahminKaydetAsync(_yil, _tahminler);
+            Snackbar.Add($"{_yil} yılı tahminleri veritabanına kaydedildi.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Kayıt hatası: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _kaydediliyor = false;
+        }
+    }
+}

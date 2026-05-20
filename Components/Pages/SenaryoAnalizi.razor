@@ -1,0 +1,159 @@
+@page "/senaryo-analizi"
+@using MroPlan.Services
+@inject IYillikPlanlamaService PlanlamaService
+
+<PageTitle>Senaryo Analizi</PageTitle>
+
+<div class="pa-6">
+    <div class="mb-6">
+        <MudText Typo="Typo.h4" Style="font-weight:900; color:#FACC15; letter-spacing:-1px;">SENARYO ANALİZİ</MudText>
+        <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.4);">What-if senaryoları ile iş gücü gap tahmini</MudText>
+    </div>
+
+    <MudGrid>
+        @* Parametreler Paneli *@
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-6 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.08);">
+                <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:20px;">SENARYO PARAMETRELERİ</MudText>
+
+                <div class="d-flex flex-column gap-5">
+                    <div>
+                        <MudText Typo="Typo.caption" Style="color:#FACC15; font-weight:900; letter-spacing:1px; margin-bottom:8px;">PERSONEL DEĞİŞİMİ</MudText>
+                        <MudSlider @bind-Value="_personelDegisimi" @bind-Value:after="AnalizEtAsync" Min="-10" Max="20" Step="1" Color="Color.Warning">
+                            <MudText Typo="Typo.body2" Style="color:white; font-weight:700;">@(_personelDegisimi >= 0 ? $"+{_personelDegisimi}" : $"{_personelDegisimi}") personel</MudText>
+                        </MudSlider>
+                    </div>
+
+                    <div>
+                        <MudText Typo="Typo.caption" Style="color:#38bdf8; font-weight:900; letter-spacing:1px; margin-bottom:8px;">YENİ UÇAK SAYISI</MudText>
+                        <MudSlider @bind-Value="_yeniUcak" @bind-Value:after="AnalizEtAsync" Min="0" Max="10" Step="1" Color="Color.Info">
+                            <MudText Typo="Typo.body2" Style="color:white; font-weight:700;">@_yeniUcak uçak</MudText>
+                        </MudSlider>
+                    </div>
+
+                    <div>
+                        <MudText Typo="Typo.caption" Style="color:#4ade80; font-weight:900; letter-spacing:1px; margin-bottom:8px;">EĞİTİM (KİŞİ BAŞI GÜN/AY)</MudText>
+                        <MudSlider @bind-Value="_egitimGun" @bind-Value:after="AnalizEtAsync" Min="0" Max="20" Step="1" Color="Color.Success">
+                            <MudText Typo="Typo.body2" Style="color:white; font-weight:700;">@_egitimGun gün/kişi</MudText>
+                        </MudSlider>
+                    </div>
+
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" FullWidth="true"
+                               StartIcon="@Icons.Material.Rounded.PlayArrow" Style="font-weight:900; height:48px;"
+                               OnClick="AnalizEtAsync">SENARYOYU ÇALIŞTIR</MudButton>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        @* Sonuçlar Paneli *@
+        <MudItem xs="12" md="8">
+            @if (_yukleniyor)
+            {
+                <div class="d-flex justify-center align-center" style="height:400px;">
+                    <MudProgressCircular Color="Color.Warning" Indeterminate="true" Size="Size.Large" />
+                </div>
+            }
+            else if (_sonuc != null)
+            {
+                @* Risk Durumu *@
+                <MudPaper Class="pa-5 mb-4 rounded-xl d-flex align-center gap-4"
+                          Style="@($"background:rgba({RiskRgba(_sonuc.RiskSeviyesi)},0.10); border:1px solid rgba({RiskRgba(_sonuc.RiskSeviyesi)},0.4);")">
+                    <MudIcon Icon="@RiskIkon(_sonuc.RiskSeviyesi)" Style="@($"color:rgb({RiskRgba(_sonuc.RiskSeviyesi)}); font-size:2.5rem;")" />
+                    <div>
+                        <MudText Style="@($"font-weight:900; font-size:1.3rem; color:rgb({RiskRgba(_sonuc.RiskSeviyesi)});")">@_sonuc.RiskSeviyesi RİSK</MudText>
+                        <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.6);">@_sonuc.Aciklama</MudText>
+                    </div>
+                </MudPaper>
+
+                @* KPI Grid *@
+                <MudGrid Class="mb-4">
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">MEVCUT</MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:900; color:white;">@_sonuc.MevcutPersonel</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">personel</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(250,204,21,0.06); border:1px solid rgba(250,204,21,0.2);">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">SENARYO</MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:900; color:#FACC15;">@_sonuc.SenaryoPersonel</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">personel</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-4 rounded-xl text-center" Style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2);">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">TAHMİNİ İHTİYAÇ</MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:900; color:#38bdf8;">@_sonuc.TahminiIhtiyac</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">p-gün</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Class="pa-4 rounded-xl text-center" Style="@($"background:rgba({RiskRgba(_sonuc.RiskSeviyesi)},0.06); border:1px solid rgba({RiskRgba(_sonuc.RiskSeviyesi)},0.25);")">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">GAP</MudText>
+                            <MudText Typo="Typo.h5" Style="@($"font-weight:900; color:rgb({RiskRgba(_sonuc.RiskSeviyesi)});")">@(_sonuc.GapAcigi >= 0 ? $"+{_sonuc.GapAcigi}" : $"{_sonuc.GapAcigi}")</MudText>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">p-gün</MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                @* Öneriler *@
+                @if (_sonuc.Oneriler.Any())
+                {
+                    <MudPaper Class="pa-5 rounded-xl" Style="background:rgba(15,20,35,0.8); border:1px solid rgba(255,255,255,0.06);">
+                        <MudText Typo="Typo.h6" Style="font-weight:900; color:white; margin-bottom:12px;">ÖNERİLER</MudText>
+                        @foreach (var oneri in _sonuc.Oneriler)
+                        {
+                            <div class="d-flex align-center gap-3 mb-2">
+                                <MudIcon Icon="@Icons.Material.Rounded.ArrowForward" Size="Size.Small" Style="color:#FACC15;" />
+                                <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.7);">@oneri</MudText>
+                            </div>
+                        }
+                    </MudPaper>
+                }
+            }
+            else
+            {
+                <div class="d-flex flex-column align-center justify-center" style="height:400px; opacity:0.3;">
+                    <MudIcon Icon="@Icons.Material.Rounded.Science" Style="font-size:4rem;" />
+                    <MudText Typo="Typo.h6" Style="font-weight:700; margin-top:12px;">Parametreleri ayarlayın ve senaryoyu çalıştırın</MudText>
+                </div>
+            }
+        </MudItem>
+    </MudGrid>
+</div>
+
+@code {
+    private int _personelDegisimi = 0;
+    private int _yeniUcak = 0;
+    private int _egitimGun = 0;
+    private bool _yukleniyor = false;
+    private SenaryoSonuc? _sonuc;
+
+    protected override async Task OnInitializedAsync() => await AnalizEtAsync();
+
+    private async Task AnalizEtAsync()
+    {
+        _yukleniyor = true;
+        StateHasChanged();
+        var p = new SenaryoParametreleri(_personelDegisimi, _yeniUcak, _egitimGun, DateTime.Now.Year, DateTime.Now.Month);
+        _sonuc = await PlanlamaService.SenaryoAnalizeEtAsync(p);
+        _yukleniyor = false;
+    }
+
+    private string RiskRgba(string risk) => risk switch
+    {
+        "KRİTİK" => "239,68,68",
+        "YÜKSEK" => "249,115,22",
+        "ORTA"   => "250,204,21",
+        _         => "34,197,94"
+    };
+
+    private string RiskIkon(string risk) => risk switch
+    {
+        "KRİTİK" => Icons.Material.Rounded.Error,
+        "YÜKSEK" => Icons.Material.Rounded.Warning,
+        "ORTA"   => Icons.Material.Rounded.Info,
+        _         => Icons.Material.Rounded.CheckCircle
+    };
+}

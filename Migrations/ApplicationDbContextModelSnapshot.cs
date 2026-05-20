@@ -104,6 +104,9 @@ namespace MroPlan.Migrations
 
                     b.HasIndex("SupervisorPersonelId");
 
+                    b.HasIndex("BakimPlaniId", "ParcaSablonuId")
+                        .IsUnique();
+
                     b.ToTable("BakimKontrolKayitlari");
                 });
 
@@ -219,6 +222,12 @@ namespace MroPlan.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("RotaGrubu")
+                        .HasColumnType("text");
+
+                    b.Property<int>("SiraNo")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BakimGrubuId");
@@ -298,6 +307,12 @@ namespace MroPlan.Migrations
                     b.Property<DateTime>("TamamlanmaTarihi")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("PlanlananBaslangic")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PlanlananBitis")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EgitimModuluId");
@@ -317,9 +332,6 @@ namespace MroPlan.Migrations
 
                     b.Property<string>("Aciklama")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("GecerlilikTarihi")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("GuncellenmeTarihi")
                         .HasColumnType("timestamp with time zone");

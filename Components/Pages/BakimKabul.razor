@@ -10,250 +10,774 @@
 @inject IDialogService DialogService
 @inject NavigationManager Nav
 
-<MudContainer MaxWidth="@MaxWidth.False" Class="mt-4 animate-fade-in">
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-6 animate-fade-in">
 
-    <div class="d-flex align-center justify-space-between mb-8">
+    @* ─── BÖLÜM 1 — BAŞLIK VE AÇIKLAMA ─── *@
+    <div class="d-flex align-center justify-space-between mb-6">
         <div>
             <div class="d-flex align-center gap-3">
                 <div class="header-indicator"></div>
-                <MudText Typo="Typo.h4" Style="font-weight:900; letter-spacing:-1.5px; text-transform:uppercase; color:#FACC15;">Hava Aracı Kabulü</MudText>
+                <MudText Typo="Typo.h4" Style="font-weight:900; letter-spacing:-1.5px; text-transform:uppercase; color:#FACC15; font-family:'Outfit', sans-serif;">MRO Kabul Paneli</MudText>
             </div>
-            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.45); font-weight:600; margin-left:24px;">
-                Sisteme yeni hava aracı girişi yapın ve planlanan teslim tarihini belirleyin.
+            <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.45); font-weight:600; margin-left:24px; font-family:'Inter', sans-serif;">
+                Hava araçlarının atölye kabul süreçlerini, iş emri ilerlemelerini ve termin durumlarını takip edin.
             </MudText>
         </div>
     </div>
 
-    <MudGrid Spacing="6">
-
-        @* ─── KABUL FORMU ─── *@
-        <MudItem xs="12" md="4">
-            <MudPaper Class="pa-8 rounded-xxl cyber-card">
-                <MudText Typo="Typo.h6" Class="mb-6" Style="font-weight:900; letter-spacing:-0.5px;">
-                    @(_isEdit ? "Kaydı Düzenle" : "Yeni Kabul")
-                </MudText>
-
-                <div class="d-flex flex-column gap-4">
-                    <MudTextField @bind-Value="_yeniPlan.SeriNo" Label="Seri Numarası"
-                                  Variant="Variant.Outlined" />
-
-                    <MudSelect T="string" Label="Helikopter Tipi"
-                               Value="_yeniPlan.HeliTipi"
-                               ValueChanged="@(async (string tip) => { _yeniPlan.HeliTipi = tip; await OtomatikHesapla(); })"
-                               Disabled="@_hesaplaniyor"
-                               Variant="Variant.Outlined">
-                        @foreach (var tip in HeliTipleri.Hepsi)
-                        {
-                            <MudSelectItem Value="@tip" />
-                        }
-                    </MudSelect>
-
-                    <MudSelect T="string" Label="Geldiği Birlik / Komutanlık" @bind-Value="_yeniPlan.GeldigiBirlik"
-                               Variant="Variant.Outlined">
-                        <MudSelectItem Value="@("Deniz Havacılık K.")" />
-                        <MudSelectItem Value="@("Emniyet Hav. D.")" />
-                        <MudSelectItem Value="@("Jandarma Hav. K.")" />
-                        <MudSelectItem Value="@("Kara Havacılık K.")" />
-                        <MudSelectItem Value="@("Özel Kuvvetler")" />
-                    </MudSelect>
-
-                    @* ─── HEDEF TESLİM TARİHİ ─── *@
-                    <MudDivider Class="my-1" />
-                    <div>
-                        <MudText Typo="Typo.caption" Class="mb-2" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em;">
-                            HEDEF TESLİM TARİHİ
-                        </MudText>
-
-                        <MudDatePicker @bind-Date="_hedefTarihNullable"
-                                       Variant="Variant.Outlined"
-                                       DateFormat="dd.MM.yyyy"
-                                       Placeholder="Tarih seçin veya otomatik hesaplayın"
-                                       PickerVariant="PickerVariant.Dialog"
-                                       MinDate="DateTime.Today" />
-
-                        @if (_sonTahmin != null)
-                        {
-                            <div class="mt-2 pa-3 rounded-lg" style="background:rgba(250,204,21,0.06); border:1px solid rgba(250,204,21,0.2);">
-                                <div class="d-flex justify-space-between mb-1">
-                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">🔧 İŞÇİLİK</MudText>
-                                    <MudText Typo="Typo.caption" Style="color:white; font-weight:800;">@FormatDk(_sonTahmin.ToplamIscilikDk)</MudText>
-                                </div>
-                                <div class="d-flex justify-space-between mb-1">
-                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">⚙️ SETUP</MudText>
-                                    <MudText Typo="Typo.caption" Style="color:white; font-weight:800;">@FormatDk(_sonTahmin.ToplamHazirlikDk)</MudText>
-                                </div>
-                                <div class="d-flex justify-space-between mb-1">
-                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">☕ MOLA/GÜN</MudText>
-                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700;">90 dk</MudText>
-                                </div>
-                                <MudDivider Class="my-1" Style="opacity:0.2;" />
-                                <div class="d-flex justify-space-between mb-1">
-                                    <MudText Typo="Typo.caption" Style="color:#facc15; font-weight:900;">📦 TOPLAM</MudText>
-                                    <MudText Typo="Typo.caption" Style="color:#facc15; font-weight:900;">@FormatDk(_sonTahmin.ToplamDk)</MudText>
-                                </div>
-                                <div class="mt-2 pa-2 rounded-lg" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);">
-                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); font-size:0.62rem; line-height:1.5;">
-                                        ℹ️ Bu süre <b style="color:rgba(255,255,255,0.55);">tek teknisyen</b> varsayımıyla hesaplanmıştır.
-                                        Atölyenizdeki teknisyen sayısına göre tahmini tarihi kendiniz kısaltabilirsiniz.
-                                        (@((int)Math.Ceiling(_sonTahmin.ToplamDk / 510.0)) iş günü × 1 kişi)
-                                    </MudText>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                    <MudDivider Class="my-1" />
-
-                    <MudButton Variant="Variant.Filled"
-                               Color="@(_isEdit ? Color.Info : Color.Primary)"
-                               FullWidth="true" Class="rounded-xl py-3 mt-2"
-                               Style="font-weight:900;"
-                               OnClick="BakimKaydet"
-                               StartIcon="@(_isEdit ? Icons.Material.Filled.Save : Icons.Material.Filled.FlightTakeoff)">
-                        @(_isEdit ? "Bilgileri Güncelle" : "Kabulü Tamamla")
-                    </MudButton>
-
-                    @if (_isEdit)
-                    {
-                        <MudButton Variant="Variant.Text" Color="Color.Default" FullWidth="true" OnClick="Vazgec">
-                            Vazgeç
-                        </MudButton>
-                    }
+    @* ─── BÖLÜM 1 — KPI ŞERİDİ ─── *@
+    <MudGrid Class="mb-6">
+        @* Kart 1: Toplam Uçak *@
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center cyber-stat-card" Elevation="0" Style="border-left: 5px solid #FACC15;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(250,204,21,0.08); color:#FACC15; box-shadow: 0 0 15px rgba(250,204,21,0.05);">
+                    <MudIcon Icon="@Icons.Material.Filled.Flight" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing: 0.05em; display:block;">TOPLAM UÇAK</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#FACC15; font-family: 'Outfit', sans-serif;">@_toplamUcak</MudText>
                 </div>
             </MudPaper>
         </MudItem>
 
-        @* ─── LİSTE ─── *@
-        <MudItem xs="12" md="8">
-            <MudPaper Class="pa-6 rounded-xxl cyber-card">
-                <MudTable Items="@_filtreliPlanlar" Hover="true" Elevation="0" Dense="true"
-                          Filter="new Func<BakimPlani, bool>(AramaFiltresi)">
-                    <ToolBarContent>
-                        <MudText Typo="Typo.h6" Style="font-weight:800;">Güncel Kabul Listesi</MudText>
-                        <MudSpacer />
-                        <div class="d-flex align-center gap-2">
-                            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
-                                <MudButton OnClick='() => _durumFiltre = "Hepsi"'
-                                           Color="@(_durumFiltre == "Hepsi" ? Color.Primary : Color.Default)">Hepsi</MudButton>
-                                <MudButton OnClick='() => _durumFiltre = "Aktif"'
-                                           Color="@(_durumFiltre == "Aktif" ? Color.Warning : Color.Default)">Aktif</MudButton>
-                                <MudButton OnClick='() => _durumFiltre = "Tamamlandi"'
-                                           Color="@(_durumFiltre == "Tamamlandi" ? Color.Success : Color.Default)">Tamamlandı</MudButton>
-                            </MudButtonGroup>
-                            <MudTextField @bind-Value="_aramaMetni" Placeholder="Ara..."
-                                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:220px;" />
-                        </div>
-                    </ToolBarContent>
-                    <HeaderContent>
-                        <MudTh>Kabul Tarihi</MudTh>
-                        <MudTh>Seri No</MudTh>
-                        <MudTh>Tip</MudTh>
-                        <MudTh>Birlik</MudTh>
-                        <MudTh>Tahmini Teslimat</MudTh>
-                        <MudTh>Durum</MudTh>
-                        <MudTh Style="width:110px; text-align:right;">İşlem</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd>@context.KabulTarihi.ToLocalTime().ToString("dd.MM.yyyy")</MudTd>
-                        <MudTd><MudText Style="font-weight:800;">@context.SeriNo</MudText></MudTd>
-                        <MudTd>@context.HeliTipi</MudTd>
-                        <MudTd>@context.GeldigiBirlik</MudTd>
-                        <MudTd>
-                            @if (context.HedefTeslimTarihi.HasValue)
-                            {
-                                var hedef = context.HedefTeslimTarihi.Value.ToLocalTime();
-                                var kalanGun = (hedef.Date - DateTime.Today).TotalDays;
-                                var gecikti = context.GenelDurumEnum != BakimDurumu.Tamamlandi && kalanGun < 0;
-                                var yaklasti = !gecikti && kalanGun <= 3;
-                                var renk = gecikti ? "#ef4444" : yaklasti ? "#facc15" : "rgba(255,255,255,0.85)";
-                                <div>
-                                    <div class="d-flex align-center gap-2">
-                                        <MudText Typo="Typo.body2" Style="@($"font-weight:800; color:{renk}")">
-                                            @hedef.ToString("dd.MM.yyyy")
-                                        </MudText>
-                                        @if (context.GenelDurumEnum != BakimDurumu.Tamamlandi)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                                     Color="@(gecikti ? Color.Error : yaklasti ? Color.Warning : Color.Default)"
-                                                     Style="font-size:0.6rem; font-weight:900; height:18px; padding:0 6px;">
-                                                @(gecikti ? $"{(int)-kalanGun}g GECİKTİ" : $"{(int)kalanGun}g kaldı")
-                                            </MudChip>
-                                        }
-                                    </div>
-                                    @{
-                                        var isler = context.KontrolKayitlari;
-                                        if (isler != null && isler.Any())
-                                        {
-                                            var iscilikDk  = isler.Sum(k => k.ParcaSablonu?.IslemSure     ?? 60);
-                                            var hazirlikDk = isler.Sum(k => k.ParcaSablonu?.HazirlikSuresi ?? 15);
-                                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); font-size:0.62rem;">
-                                                🔧 @FormatDk(iscilikDk) · ⚙️ @FormatDk(hazirlikDk) setup
-                                            </MudText>
-                                        }
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.2); font-style:italic;">Belirlenmedi</MudText>
-                            }
-                        </MudTd>
-                        <MudTd>
-                            <MudChip T="string" Color="@GetDurumColor(context.GenelDurumEnum)"
-                                     Size="Size.Small" Class="rounded-lg">@context.GenelDurum</MudChip>
-                        </MudTd>
-                        <MudTd>
-                            <div class="d-flex align-center justify-end gap-1">
-                                @if (context.GenelDurumEnum == BakimDurumu.Beklemede)
-                                {
-                                    <MudTooltip Text="İş Emri Oluştur">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Send" Size="Size.Small" Color="Color.Primary"
-                                                       OnClick="@(() => Nav.NavigateTo($"/is-emri-dagitim?planId={context.Id}"))" />
-                                    </MudTooltip>
-                                }
-                                else if (context.GenelDurumEnum == BakimDurumu.DevamEdiyor)
-                                {
-                                    <MudTooltip Text="Atölye Paneli">
-                                        <MudIconButton Icon="@Icons.Material.Filled.PrecisionManufacturing" Size="Size.Small" Color="Color.Info"
-                                                       OnClick='() => Nav.NavigateTo("/atolye-operasyon")' />
-                                    </MudTooltip>
-                                }
-                                else
-                                {
-                                    <MudTooltip Text="Tamamlandı">
-                                        <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" Disabled="true" />
-                                    </MudTooltip>
-                                }
-                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
-                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
-                                    <MudMenuItem Icon="@Icons.Material.Filled.Edit" IconColor="Color.Primary"
-                                                 OnClick="@(() => DuzenleHazirla(context))">Düzenle</MudMenuItem>
-                                    <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error"
-                                                 OnClick="@(() => SilBakim(context))">
-                                        <MudText Color="Color.Error">Sil</MudText>
-                                    </MudMenuItem>
-                                </MudMenu>
-                            </div>
-                        </MudTd>
-                    </RowTemplate>
-                    <NoRecordsContent>
-                        <div class="pa-8 d-flex flex-column align-center">
-                            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Color="Color.Default" />
-                            <MudText Class="mt-2" Style="color:rgba(255,255,255,0.3);">Kayıt bulunamadı.</MudText>
-                        </div>
-                    </NoRecordsContent>
-                </MudTable>
+        @* Kart 2: Aktif Bakımda *@
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center cyber-stat-card" Elevation="0" Style="border-left: 5px solid #3B82F6;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(59,130,246,0.08); color:#3B82F6; box-shadow: 0 0 15px rgba(59,130,246,0.05);">
+                    <MudIcon Icon="@Icons.Material.Filled.Build" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing: 0.05em; display:block;">AKTİF BAKIMDA</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#3B82F6; font-family: 'Outfit', sans-serif;">@_aktifSayisi</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        @* Kart 3: Bu Ay Tamamlanan *@
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center cyber-stat-card" Elevation="0" Style="border-left: 5px solid #10B981;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(16,185,129,0.08); color:#10B981; box-shadow: 0 0 15px rgba(16,185,129,0.05);">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing: 0.05em; display:block;">BU AY TAMAMLANAN</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#10B981; font-family: 'Outfit', sans-serif;">@_buAyTamamlanan</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        @* Kart 4: Geciken *@
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-5 rounded-xxl d-flex align-center cyber-stat-card" Elevation="0" Style="border-left: 5px solid #EF4444;">
+                <div class="pa-4 rounded-xl mr-4" style="background:rgba(239,68,68,0.08); color:#EF4444; box-shadow: 0 0 15px rgba(239,68,68,0.05);">
+                    <MudIcon Icon="@Icons.Material.Filled.ReportProblem" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing: 0.05em; display:block;">GECİKEN</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight:900; color:#EF4444; font-family: 'Outfit', sans-serif;">@_gecikenSayisi</MudText>
+                </div>
             </MudPaper>
         </MudItem>
     </MudGrid>
+
+    @* ─── BÖLÜM 2 — FİLTRE & ARAMA ÇUBUĞU ─── *@
+    <div class="d-flex flex-wrap align-center justify-space-between gap-4 mb-6 pa-4 rounded-xxl cyber-filter-bar" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05);">
+        @* Sol: Durum filtre butonları *@
+        <div class="d-flex align-center gap-2">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" Color="Color.Default" Class="rounded-lg overflow-hidden">
+                <MudButton OnClick='() => { _durumFiltre = "Hepsi"; }'
+                           Variant="@(_durumFiltre == "Hepsi" ? Variant.Filled : Variant.Outlined)"
+                           Color="@(_durumFiltre == "Hepsi" ? Color.Primary : Color.Default)"
+                           Style="font-weight:700;">Hepsi</MudButton>
+                <MudButton OnClick='() => { _durumFiltre = "Aktif"; }'
+                           Variant="@(_durumFiltre == "Aktif" ? Variant.Filled : Variant.Outlined)"
+                           Color="@(_durumFiltre == "Aktif" ? Color.Info : Color.Default)"
+                           Style="font-weight:700;">Aktif</MudButton>
+                <MudButton OnClick='() => { _durumFiltre = "Tamamlandi"; }'
+                           Variant="@(_durumFiltre == "Tamamlandi" ? Variant.Filled : Variant.Outlined)"
+                           Color="@(_durumFiltre == "Tamamlandi" ? Color.Success : Color.Default)"
+                           Style="font-weight:700;">Tamamlandı</MudButton>
+                <MudButton OnClick='() => { _durumFiltre = "Geciken"; }'
+                           Variant="@(_durumFiltre == "Geciken" ? Variant.Filled : Variant.Outlined)"
+                           Color="@(_durumFiltre == "Geciken" ? Color.Error : Color.Default)"
+                           Style="font-weight:700;">Geciken</MudButton>
+            </MudButtonGroup>
+        </div>
+
+        @* Orta: Arama *@
+        <div class="flex-grow-1 mx-md-4" style="max-width: 400px; min-width: 250px;">
+            <MudTextField @bind-Value="_aramaMetni" Placeholder="Seri No, Heli Tipi veya Birlik Ara..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="rounded-lg cyber-search" />
+        </div>
+
+        @* Sağ: + YENİ KABUL *@
+        <div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="() => YeniKabulAc()"
+                       Class="rounded-lg pa-3 px-6"
+                       Style="font-weight:800; background:linear-gradient(135deg, #FACC15, #D97706); color:black; box-shadow:0 8px 15px rgba(250, 204, 21, 0.2);">
+                + YENİ KABUL
+            </MudButton>
+        </div>
+    </div>
+
+    @* ─── BÖLÜM 3 — UÇAK KARTLARI GRİD ─── *@
+    <MudGrid Spacing="6" Class="mb-8">
+        @if (!_filtreliPlanlar.Any(AramaFiltresi))
+        {
+            <MudItem xs="12">
+                <div class="pa-12 d-flex flex-column align-center justify-center rounded-xxl" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); min-height: 300px;">
+                    <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Style="color:rgba(255,255,255,0.15); font-size:4rem;" Class="mb-4" />
+                    <MudText Typo="Typo.h6" Style="color:rgba(255,255,255,0.5); font-weight:700;">Hava Aracı Bulunamadı</MudText>
+                    <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.35); text-align:center; max-width:400px;" Class="mt-2">
+                        Arama kriterlerinize veya seçilen filtreye uygun kayıt bulunmamaktadır.
+                    </MudText>
+                </div>
+            </MudItem>
+        }
+        else
+        {
+            @foreach (var plan in _filtreliPlanlar.Where(AramaFiltresi))
+            {
+                var context = plan; // local binding for safety
+                var toplam = context.KontrolKayitlari?.Count ?? 0;
+                var tamamlanan = context.KontrolKayitlari?.Count(k => k.Durum == "Tamamlandi") ?? 0;
+                var yuzde = toplam > 0 ? (tamamlanan * 100 / toplam) : 0;
+                
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudPaper Class="pa-6 rounded-xxl cyber-aircraft-card" Style="@GetCardStyle(context)" Elevation="0">
+                        @* Top row: TipBadge & DurumChip *@
+                        <div class="d-flex justify-space-between align-center mb-4">
+                            <span class="tip-badge">@context.HeliTipi</span>
+                            <MudChip T="string" Color="@GetDurumColor(context.GenelDurumEnum)" Size="Size.Small" Class="rounded-lg font-weight-bold" Style="height: 22px; font-size: 0.7rem;">
+                                @context.GenelDurum
+                            </MudChip>
+                        </div>
+
+                        @* Serial info & Large Heli Name *@
+                        <div class="mb-4">
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:700; letter-spacing:0.05em; display:block;">
+                                SERİ: @context.SeriNo
+                            </MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:900; color:white; letter-spacing:-0.5px; text-transform:uppercase; margin-top:2px;">
+                                @context.HeliTipi
+                            </MudText>
+                        </div>
+
+                        @* Details *@
+                        @{
+                            var beklemeGun = (int)(DateTime.Today - context.KabulTarihi.ToLocalTime().Date).TotalDays;
+                            var beklemeRenk = beklemeGun > 60 ? "#EF4444" : beklemeGun > 30 ? "#F59E0B" : "#94A3B8";
+                        }
+                        <div class="d-flex flex-column gap-2 mb-4">
+                            <div class="d-flex align-center justify-space-between">
+                                <span style="font-size:0.75rem; color:rgba(255,255,255,0.4); font-weight:600;">Birlik:</span>
+                                <span style="font-size:0.75rem; color:white; font-weight:700; text-align:right;">@context.GeldigiBirlik</span>
+                            </div>
+                            <div class="d-flex align-center justify-space-between">
+                                <span style="font-size:0.75rem; color:rgba(255,255,255,0.4); font-weight:600;">Kabul:</span>
+                                <div class="d-flex align-center gap-2">
+                                    <span style="font-size:0.75rem; color:rgba(255,255,255,0.8); font-weight:700;">@context.KabulTarihi.ToLocalTime().ToString("dd.MM.yyyy")</span>
+                                    <span style="font-size:0.65rem; font-weight:900; color:@beklemeRenk; background:color-mix(in srgb, @beklemeRenk 12%, transparent); border:1px solid color-mix(in srgb, @beklemeRenk 25%, transparent); border-radius:5px; padding:1px 6px; white-space:nowrap;">
+                                        @beklemeGun g
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* Work Order Progress *@
+                        <div class="mb-4">
+                            <div class="d-flex align-center justify-space-between mb-1">
+                                <span style="font-size:0.7rem; color:rgba(255,255,255,0.45); font-weight:800; letter-spacing:0.05em;">İŞ EMRİ İLERLEMESİ</span>
+                                <span style="font-size:0.7rem; color:#FACC15; font-weight:900;">@tamamlanan/@toplam (%@yuzde)</span>
+                            </div>
+                            <div class="progress-bar-container" style="background: rgba(255,255,255,0.06); height: 8px; border-radius: 4px; overflow: hidden; width: 100%;">
+                                <div style="background: linear-gradient(90deg, #FACC15, #F59E0B); width: @(yuzde)%; height: 100%; border-radius: 4px; transition: width 0.4s ease; box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);"></div>
+                            </div>
+                        </div>
+
+                        @* Target Date / Kalan Gün *@
+                        <div class="mb-6 pa-3 rounded-lg d-flex align-center justify-space-between" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);">
+                            <div>
+                                <span style="font-size:0.65rem; color:rgba(255,255,255,0.35); font-weight:700; display:block;">HEDEF TESLİM</span>
+                                <span style="font-size:0.75rem; color:white; font-weight:800;">
+                                    @(context.HedefTeslimTarihi.HasValue ? context.HedefTeslimTarihi.Value.ToLocalTime().ToString("dd.MM.yyyy") : "Belirlenmedi")
+                                </span>
+                            </div>
+                            <div>
+                                @if (context.HedefTeslimTarihi.HasValue)
+                                {
+                                    var hedef = context.HedefTeslimTarihi.Value.ToLocalTime();
+                                    var kalanGun = (hedef.Date - DateTime.Today).TotalDays;
+                                    var gecikti = context.GenelDurumEnum != BakimDurumu.Tamamlandi && kalanGun < 0;
+                                    var yaklasti = !gecikti && kalanGun <= 3;
+
+                                    if (context.GenelDurumEnum == BakimDurumu.Tamamlandi)
+                                    {
+                                        <span class="kalan-gun-badge completed-badge">Tamamlandı</span>
+                                    }
+                                    else if (gecikti)
+                                    {
+                                        <span class="kalan-gun-badge delay-badge">@((int)-kalanGun)g gecikti</span>
+                                    }
+                                    else if (yaklasti)
+                                    {
+                                        <span class="kalan-gun-badge warning-badge">@((int)kalanGun)g kaldı</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="kalan-gun-badge normal-badge">@((int)kalanGun)g kaldı</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="kalan-gun-badge undefined-badge">Belirsiz</span>
+                                }
+                            </div>
+                        </div>
+
+                        @* Footer Buttons *@
+                        <div class="d-flex align-center gap-2 pt-2" style="border-top:1px solid rgba(255,255,255,0.05);">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="rounded-lg flex-grow-1"
+                                       Style="font-weight:700; font-size:0.75rem; height: 32px;"
+                                       Disabled="@(context.GenelDurumEnum != BakimDurumu.Beklemede)"
+                                       OnClick="@(() => Nav.NavigateTo($"/is-emri-dagitim?planId={context.Id}"))">
+                                İş Emri
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" Class="rounded-lg flex-grow-1"
+                                       Style="font-weight:700; font-size:0.75rem; height: 32px;"
+                                       Disabled="@(context.GenelDurumEnum != BakimDurumu.DevamEdiyor)"
+                                       OnClick='() => Nav.NavigateTo("/atolye-operasyon")'>
+                                Atölye
+                            </MudButton>
+
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true" Class="align-self-center">
+                                <MudMenuItem Icon="@Icons.Material.Filled.Edit" IconColor="Color.Primary"
+                                             OnClick="@(() => DuzenleHazirla(context))">Düzenle</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error"
+                                             OnClick="@(() => SilBakim(context))">
+                                    <span style="color:#ef4444;">Sil</span>
+                                </MudMenuItem>
+                            </MudMenu>
+                        </div>
+
+                        @* Rota Görüntüle *@
+                        <div class="mt-2">
+                            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Small"
+                                       Class="rounded-lg rota-btn"
+                                       Style="font-weight:800; font-size:0.75rem; height:32px; border-color:rgba(250,204,21,0.3); color:#FACC15; letter-spacing:0.04em;"
+                                       StartIcon="@Icons.Material.Filled.Route"
+                                       OnClick="@(() => RotaGoster(context))">
+                                ROTA GÖRÜNTÜLE
+                            </MudButton>
+                        </div>
+                    </MudPaper>
+                </MudItem>
+            }
+        }
+    </MudGrid>
 </MudContainer>
+
+@* ─── ROTA MODAL ─── *@
+@if (_rotaPlan != null)
+{
+    <div class="py-backdrop" @onclick="RotaKapat"></div>
+    <div class="rota-modal-container" @onclick:stopPropagation="true">
+        <div class="rota-modal">
+            @* Modal Header *@
+            <div class="rota-modal-header">
+                <div>
+                    <span class="rota-modal-title">BAKIM ROTASI</span>
+                    <span class="rota-modal-subtitle">@_rotaPlan.HeliTipi &mdash; Seri: @_rotaPlan.SeriNo</span>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Medium"
+                               Style="color:rgba(255,255,255,0.4);" OnClick="RotaKapat" />
+            </div>
+
+            @if (_rotaYukleniyor)
+            {
+                <div class="d-flex justify-center align-center pa-12">
+                    <MudProgressCircular Color="Color.Warning" Indeterminate="true" Size="Size.Large" />
+                </div>
+            }
+            else if (!_rotaSablonlari.Any())
+            {
+                <div class="d-flex flex-column align-center pa-12 gap-3">
+                    <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size:3rem; color:rgba(255,255,255,0.2);" />
+                    <MudText Style="color:rgba(255,255,255,0.4); font-weight:700;">Bu uçak tipi için rota şablonu tanımlı değil.</MudText>
+                </div>
+            }
+            else
+            {
+                @* Özet şerit *@
+                var toplamIslem = _rotaSablonlari.Sum(s => s.IslemSure);
+                var toplamHazirlik = _rotaSablonlari.Sum(s => s.HazirlikSuresi);
+                var grupSayisi = _rotaSablonlari.Select(s => s.BakimGrubuId).Distinct().Count();
+                <div class="rota-ozet-serit">
+                    <div class="rota-ozet-item">
+                        <span class="rota-ozet-val">@grupSayisi</span>
+                        <span class="rota-ozet-lbl">Atölye</span>
+                    </div>
+                    <div class="rota-ozet-sep"></div>
+                    <div class="rota-ozet-item">
+                        <span class="rota-ozet-val">@_rotaSablonlari.Count</span>
+                        <span class="rota-ozet-lbl">İşlem</span>
+                    </div>
+                    <div class="rota-ozet-sep"></div>
+                    <div class="rota-ozet-item">
+                        <span class="rota-ozet-val" style="color:#FACC15;">@FormatDk(toplamIslem)</span>
+                        <span class="rota-ozet-lbl">Toplam İşçilik</span>
+                    </div>
+                    <div class="rota-ozet-sep"></div>
+                    <div class="rota-ozet-item">
+                        <span class="rota-ozet-val" style="color:#94A3B8;">@FormatDk(toplamHazirlik)</span>
+                        <span class="rota-ozet-lbl">Toplam Setup</span>
+                    </div>
+                </div>
+
+                @* Rota Zinciri *@
+                <div class="rota-chain-wrapper">
+                    <div class="rota-chain">
+                        @{
+                            var gruplar = _rotaSablonlari
+                                .GroupBy(s => s.BakimGrubuId)
+                                .OrderBy(g => g.Min(s => s.SiraNo))
+                                .ToList();
+
+                            // Atölye renkleri
+                            string[] atolyeRenkler = {
+                                "#3B82F6", "#8B5CF6", "#10B981", "#F59E0B",
+                                "#EF4444", "#06B6D4", "#EC4899", "#84CC16"
+                            };
+                        }
+
+                        @for (int gi = 0; gi < gruplar.Count; gi++)
+                        {
+                            var grup = gruplar[gi];
+                            var parcalar = grup.OrderBy(s => s.SiraNo).ThenBy(s => s.ParcaAdi).ToList();
+                            var grupAdi = parcalar.FirstOrDefault()?.BakimGrubu?.GrupAdi ?? $"Atölye {grup.Key}";
+                            var atolyeKodu = parcalar.FirstOrDefault()?.BakimGrubu?.AtolyeKodu ?? "";
+                            var renk = atolyeRenkler[gi % atolyeRenkler.Length];
+                            var toplamSure = parcalar.Sum(p => p.IslemSure);
+                            var idx = gi; // local capture
+
+                            @* Atölye Kartı *@
+                            <div class="rota-atolye-card" style="--atolye-renk:@renk; animation-delay:@(idx * 0.12)s;">
+                                @* Kart Başlık *@
+                                <div class="rota-atolye-header" style="background:linear-gradient(135deg, @renk 0%, @(renk)88 100%);">
+                                    <div class="rota-atolye-no">@(idx + 1)</div>
+                                    <div>
+                                        <div class="rota-atolye-ad">@grupAdi</div>
+                                        @if (!string.IsNullOrEmpty(atolyeKodu))
+                                        {
+                                            <div class="rota-atolye-kod">@atolyeKodu</div>
+                                        }
+                                    </div>
+                                    <div class="rota-atolye-toplam-sure">@FormatDk(toplamSure)</div>
+                                </div>
+
+                                @* Parçalar Listesi *@
+                                <div class="rota-parcalar-liste">
+                                    @foreach (var (parca, pi) in parcalar.Select((p, i) => (p, i)))
+                                    {
+                                        <div class="rota-parca-satir" style="animation-delay:@(idx * 0.12 + pi * 0.06 + 0.06)s;">
+                                            @if (parca.HazirlikSuresi > 0 && pi > 0)
+                                            {
+                                                <div class="rota-parca-setup">
+                                                    <span class="material-icons" style="font-size:11px;">hardware</span>
+                                                    @FormatDk(parca.HazirlikSuresi)
+                                                </div>
+                                            }
+                                            <div class="rota-parca-kutu" style="--parca-renk:@renk;">
+                                                <div class="rota-parca-sure-badge">@FormatDk(parca.IslemSure)</div>
+                                                <div class="rota-parca-adi-text">@parca.ParcaAdi</div>
+                                                <div class="rota-parca-pn">@parca.ParcaPN</div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            @* Atölyeler arası boşluk *@
+                            @if (gi < gruplar.Count - 1)
+                            {
+                                <div style="width:24px; flex-shrink:0;"></div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* ─── BÖLÜM 4 — SLIDE-OVER KABUL FORMU ─── *@
+@if (_formAcik)
+{
+    <div class="py-backdrop" @onclick="Vazgec"></div>
+    <div class="py-panel-container">
+        <div class="py-panel">
+            <div class="d-flex align-center justify-space-between mb-6" style="border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:16px;">
+                <div>
+                    <MudText Typo="Typo.h5" Style="font-weight:900; color:#FACC15; font-family:'Outfit', sans-serif; text-transform:uppercase;">
+                        @(_isEdit ? "Hava Aracı Düzenle" : "Yeni Kabul Girişi")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4); font-weight:600;">
+                        @(_isEdit ? $"{_yeniPlan.SeriNo} seri numaralı kaydı güncelleyin." : "Yeni hava aracı kabul detaylarını doldurun.")
+                    </MudText>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="Vazgec" Size="Size.Medium" Style="color:rgba(255,255,255,0.35);" />
+            </div>
+
+            <div class="d-flex flex-column gap-5">
+                <MudTextField @bind-Value="_yeniPlan.SeriNo" Label="Seri Numarası"
+                              Variant="Variant.Outlined" Required="true" Placeholder="Örn: 0501" />
+
+                <MudSelect T="string" Label="Helikopter Tipi"
+                           Value="_yeniPlan.HeliTipi"
+                           ValueChanged="@(async (string tip) => { _yeniPlan.HeliTipi = tip; await OtomatikHesapla(); })"
+                           Disabled="@_hesaplaniyor"
+                           Variant="Variant.Outlined" Required="true">
+                    @foreach (var tip in HeliTipleri.Hepsi)
+                    {
+                        <MudSelectItem Value="@tip" />
+                    }
+                </MudSelect>
+
+                <MudSelect T="string" Label="Geldiği Birlik / Komutanlık" @bind-Value="_yeniPlan.GeldigiBirlik"
+                           Variant="Variant.Outlined" Required="true">
+                    <MudSelectItem Value="@("Deniz Havacılık K.")" />
+                    <MudSelectItem Value="@("Emniyet Hav. D.")" />
+                    <MudSelectItem Value="@("Jandarma Hav. K.")" />
+                    <MudSelectItem Value="@("Kara Havacılık K.")" />
+                    <MudSelectItem Value="@("Özel Kuvvetler")" />
+                </MudSelect>
+
+                @* ─── HEDEF TESLİM TARİHİ ─── *@
+                <div class="mt-2">
+                    <MudText Typo="Typo.caption" Class="mb-2 d-block" Style="color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:.05em;">
+                        HEDEF TESLİM TARİHİ
+                    </MudText>
+
+                    <MudDatePicker @bind-Date="_hedefTarihNullable"
+                                   Variant="Variant.Outlined"
+                                   DateFormat="dd.MM.yyyy"
+                                   Placeholder="Tarih seçin veya otomatik hesaplayın"
+                                   PickerVariant="PickerVariant.Dialog"
+                                   MinDate="DateTime.Today" />
+
+                </div>
+
+                <div class="d-flex flex-column gap-2 mt-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="@(_isEdit ? Color.Info : Color.Primary)"
+                               FullWidth="true" Class="rounded-xl py-4"
+                               Style="font-weight:900; background:linear-gradient(135deg, #FACC15, #D97706); color:black; font-size:1rem; box-shadow: 0 10px 20px rgba(250, 204, 21, 0.15);"
+                               OnClick="BakimKaydet"
+                               StartIcon="@(_isEdit ? Icons.Material.Filled.Save : Icons.Material.Filled.FlightTakeoff)">
+                        @(_isEdit ? "GÜNCELLEMEYİ TAMAMLA" : "KABULÜ TAMAMLA")
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Text" Color="Color.Default" FullWidth="true" OnClick="Vazgec" Class="py-2" Style="color:rgba(255,255,255,0.4); font-weight:600;">
+                        VAZGEÇ / KAPAT
+                    </MudButton>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 <style>
     .header-indicator { width:8px; height:32px; background:#FACC15; border-radius:4px; box-shadow:0 0 15px #FACC15; }
-    .cyber-card {
+    .cyber-stat-card {
         background:rgba(15,20,25,0.6) !important; backdrop-filter:blur(12px);
         border:1px solid rgba(255,255,255,0.05) !important;
-        box-shadow:0 20px 40px rgba(0,0,0,0.4) !important;
+        box-shadow:0 15px 30px rgba(0,0,0,0.3) !important;
+        transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    .cyber-stat-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    .cyber-aircraft-card {
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        position: relative;
+        overflow: hidden;
+    }
+    .cyber-aircraft-card:hover {
+        transform: translateY(-6px);
+    }
+    .tip-badge {
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #FACC15;
+        background: rgba(250,204,21,0.1);
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: 1px solid rgba(250,204,21,0.15);
+    }
+    .kalan-gun-badge {
+        font-size: 0.7rem;
+        font-weight: 900;
+        padding: 4px 8px;
+        border-radius: 6px;
+    }
+    .kalan-gun-badge.completed-badge {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10B981;
+    }
+    .kalan-gun-badge.delay-badge {
+        background: rgba(239, 68, 68, 0.15);
+        color: #EF4444;
+        animation: pulseRed 2s infinite;
+    }
+    .kalan-gun-badge.warning-badge {
+        background: rgba(250, 204, 21, 0.15);
+        color: #FACC15;
+    }
+    .kalan-gun-badge.normal-badge {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3B82F6;
+    }
+    .kalan-gun-badge.undefined-badge {
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255,255,255,0.4);
+    }
+    
+    @@keyframes pulseRed {
+        0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+        70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    
+    /* Centered Modal Styles */
+    .py-backdrop { 
+        position: fixed; inset: 0; 
+        background: rgba(0,0,0,0.75); 
+        z-index: 1400; 
+        backdrop-filter: blur(12px);
+        animation: fadeIn 0.3s ease-out;
+    }
+    .py-panel-container {
+        position: fixed; inset: 0;
+        z-index: 1401;
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px;
+        pointer-events: none;
+    }
+    .py-panel { 
+        width: 100%;
+        max-width: 520px;
+        max-height: 90vh;
+        background: rgba(15, 20, 25, 0.98); 
+        border: 1px solid rgba(250, 204, 21, 0.25) !important;
+        border-radius: 24px;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.85);
+        padding: 32px; 
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        pointer-events: auto;
+        animation: zoomIn 0.33s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .py-panel::after {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, transparent, #FACC15, transparent);
+    }
+    @@keyframes zoomIn {
+        from { transform: scale(0.92); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    /* ── Rota Görüntüle Butonu ── */
+    .rota-btn:hover {
+        background: rgba(250,204,21,0.06) !important;
+        border-color: rgba(250,204,21,0.6) !important;
+        box-shadow: 0 0 12px rgba(250,204,21,0.15);
+        transform: none;
+    }
+
+    /* ── Rota Modal ── */
+    .rota-modal-container {
+        position: fixed; inset: 0;
+        z-index: 1401;
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px;
+    }
+    .rota-modal {
+        width: 100%;
+        max-width: min(95vw, 1200px);
+        max-height: 88vh;
+        background: rgba(10, 14, 20, 0.98);
+        border: 1px solid rgba(250, 204, 21, 0.2);
+        border-radius: 24px;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.9), 0 0 40px rgba(250,204,21,0.04);
+        display: flex; flex-direction: column;
+        overflow: hidden;
+        animation: zoomIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .rota-modal::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, transparent, #FACC15 40%, #F59E0B 60%, transparent);
+        border-radius: 24px 24px 0 0;
+    }
+    .rota-modal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 28px 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        flex-shrink: 0;
+    }
+    .rota-modal-title {
+        display: block;
+        font-size: 1.1rem; font-weight: 900; letter-spacing: 0.06em;
+        color: #FACC15; font-family: 'Outfit', sans-serif; text-transform: uppercase;
+    }
+    .rota-modal-subtitle {
+        display: block; margin-top: 2px;
+        font-size: 0.8rem; color: rgba(255,255,255,0.4); font-weight: 600;
+    }
+
+    /* ── Özet Şerit ── */
+    .rota-ozet-serit {
+        display: flex; align-items: center; gap: 0;
+        padding: 14px 28px;
+        background: rgba(255,255,255,0.015);
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        flex-shrink: 0;
+    }
+    .rota-ozet-item { display: flex; flex-direction: column; align-items: center; padding: 0 24px; }
+    .rota-ozet-val { font-size: 1.4rem; font-weight: 900; color: white; font-family: 'Outfit', sans-serif; line-height: 1; }
+    .rota-ozet-lbl { font-size: 0.65rem; font-weight: 700; color: rgba(255,255,255,0.35); letter-spacing: 0.06em; margin-top: 3px; text-transform: uppercase; }
+    .rota-ozet-sep { width: 1px; height: 32px; background: rgba(255,255,255,0.07); }
+
+    /* ── Zincir Wrapper (yatay scroll) ── */
+    .rota-chain-wrapper {
+        flex: 1; overflow-x: auto; overflow-y: auto;
+        padding: 28px 28px 24px;
+    }
+    .rota-chain-wrapper::-webkit-scrollbar { height: 6px; width: 6px; }
+    .rota-chain-wrapper::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
+    .rota-chain-wrapper::-webkit-scrollbar-thumb { background: rgba(250,204,21,0.25); border-radius: 3px; }
+    .rota-chain {
+        display: flex;
+        align-items: flex-start;
+        gap: 0;
+        min-width: max-content;
+        padding-bottom: 8px;
+    }
+
+    /* ── Atölye Kartı ── */
+    .rota-atolye-card {
+        width: 220px;
+        flex-shrink: 0;
+        border-radius: 16px;
+        border: 1px solid rgba(var(--atolye-renk-rgb, 255,255,255), 0.15);
+        border-color: color-mix(in srgb, var(--atolye-renk) 25%, transparent);
+        background: rgba(255,255,255,0.02);
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        opacity: 0;
+        animation: cardSlideIn 0.5s ease forwards;
+        align-self: stretch;
+    }
+    @@keyframes cardSlideIn {
+        from { opacity: 0; transform: translateY(20px) scale(0.96); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .rota-atolye-header {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 14px;
+        position: relative;
+    }
+    .rota-atolye-no {
+        width: 26px; height: 26px; border-radius: 50%;
+        background: rgba(0,0,0,0.25);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.8rem; font-weight: 900; color: white;
+        flex-shrink: 0;
+    }
+    .rota-atolye-ad {
+        font-size: 0.8rem; font-weight: 800; color: white; line-height: 1.2;
+    }
+    .rota-atolye-kod {
+        font-size: 0.65rem; color: rgba(255,255,255,0.55); font-weight: 600; margin-top: 1px;
+    }
+    .rota-atolye-toplam-sure {
+        margin-left: auto; font-size: 0.7rem; font-weight: 900;
+        color: rgba(255,255,255,0.85); white-space: nowrap;
+        background: rgba(0,0,0,0.2); border-radius: 6px; padding: 2px 6px;
+    }
+
+    /* ── Parça Listesi ── */
+    .rota-parcalar-liste {
+        padding: 10px 10px 12px;
+        display: flex; flex-direction: column; gap: 4px;
+    }
+    .rota-parca-satir {
+        opacity: 0;
+        animation: cardSlideIn 0.45s ease forwards;
+        display: flex; flex-direction: column; gap: 3px;
+    }
+    .rota-parca-setup {
+        display: flex; align-items: center; gap: 4px;
+        font-size: 0.6rem; color: rgba(255,255,255,0.3); font-weight: 700;
+        padding: 0 4px; letter-spacing: 0.03em;
+    }
+    .rota-parca-kutu {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid color-mix(in srgb, var(--parca-renk) 15%, transparent);
+        border-radius: 10px;
+        padding: 8px 10px;
+        transition: background 0.2s;
+        cursor: default;
+    }
+    .rota-parca-kutu:hover {
+        background: color-mix(in srgb, var(--parca-renk) 8%, transparent);
+    }
+    .rota-parca-sure-badge {
+        font-size: 0.65rem; font-weight: 900;
+        color: var(--parca-renk); margin-bottom: 3px;
+    }
+    .rota-parca-adi-text {
+        font-size: 0.72rem; font-weight: 700; color: rgba(255,255,255,0.85); line-height: 1.3;
+    }
+    .rota-parca-pn {
+        font-size: 0.6rem; color: rgba(255,255,255,0.3); font-weight: 600; margin-top: 2px;
+    }
+
+    /* ── Konektör (Sevk Oku) ── */
+    .rota-konektor {
+        display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+        width: 48px; flex-shrink: 0; padding-top: 26px;
+        opacity: 0;
+        animation: cardSlideIn 0.4s ease forwards;
+        gap: 4px;
+    }
+    .rota-konektor-cizgi {
+        width: 2px; flex: 1; min-height: 14px;
+        background: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0.12));
+        border-radius: 1px;
+    }
+    .rota-konektor-ikon {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: rgba(250,204,21,0.06);
+        border: 1px solid rgba(250,204,21,0.18);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .rota-konektor-etiket {
+        font-size: 0.52rem; font-weight: 800; letter-spacing: 0.06em;
+        color: rgba(255,255,255,0.25); text-align: center; text-transform: uppercase;
     }
 </style>
 
@@ -266,6 +790,15 @@
     private bool _hesaplaniyor = false;
     private TeslimTahmini? _sonTahmin = null;
     private int _aktifPersonelSayisi = 1;
+    
+    // KPI state:
+    private int _toplamUcak, _aktifSayisi, _buAyTamamlanan, _gecikenSayisi;
+    private bool _formAcik = false;
+
+    // Rota Modal state:
+    private BakimPlani? _rotaPlan = null;
+    private List<ParcaSablonu> _rotaSablonlari = new();
+    private bool _rotaYukleniyor = false;
 
     // DatePicker nullable DateTime? ile çalışır
     private DateTime? _hedefTarihNullable
@@ -282,6 +815,7 @@
     {
         "Aktif"      => _mevcutPlanlar.Where(p => p.GenelDurumEnum != BakimDurumu.Tamamlandi),
         "Tamamlandi" => _mevcutPlanlar.Where(p => p.GenelDurumEnum == BakimDurumu.Tamamlandi),
+        "Geciken"    => _mevcutPlanlar.Where(p => p.HedefTeslimTarihi.HasValue && p.HedefTeslimTarihi.Value.ToLocalTime().Date < DateTime.Today && p.GenelDurumEnum != BakimDurumu.Tamamlandi),
         _            => _mevcutPlanlar
     };
 
@@ -296,6 +830,15 @@
     private async Task VerileriListele()
     {
         _mevcutPlanlar = await BakimService.GetBakimPlanlariAsync();
+        
+        var bugun = DateTime.Today;
+        var simdiAy = bugun.Month;
+        var simdiYil = bugun.Year;
+
+        _toplamUcak = _mevcutPlanlar.Count;
+        _aktifSayisi = _mevcutPlanlar.Count(p => p.GenelDurumEnum != BakimDurumu.Tamamlandi);
+        _buAyTamamlanan = _mevcutPlanlar.Count(p => p.GenelDurumEnum == BakimDurumu.Tamamlandi && p.KabulTarihi.ToLocalTime().Month == simdiAy && p.KabulTarihi.ToLocalTime().Year == simdiYil);
+        _gecikenSayisi = _mevcutPlanlar.Count(p => p.HedefTeslimTarihi.HasValue && p.HedefTeslimTarihi.Value.ToLocalTime().Date < bugun && p.GenelDurumEnum != BakimDurumu.Tamamlandi);
     }
 
     private async Task OtomatikHesapla()
@@ -313,17 +856,24 @@
         var tumSablonlar = await BakimService.GetParcaSablonlariAsync();
         var heliSablonlari = tumSablonlar.Where(s => s.HeliTipi == _yeniPlan.HeliTipi).ToList();
 
+        // Atölyeler paralel çalışır → kritik yol = en uzun süren atölye
+        // Her atölye kendi içindeki işleri sırayla yapar (IslemSure + HazirlikSuresi)
+        int kritikYolDk = heliSablonlari
+            .GroupBy(s => s.BakimGrubuId)
+            .Select(g => g.Sum(s => s.IslemSure + s.HazirlikSuresi))
+            .DefaultIfEmpty(0)
+            .Max();
+
         int iscilikDk  = heliSablonlari.Sum(s => s.IslemSure);
         int hazirlikDk = heliSablonlari.Sum(s => s.HazirlikSuresi);
-        int toplamDk   = iscilikDk + hazirlikDk;
 
         var baslangic = _yeniPlan.KabulTarihi > DateTime.MinValue
             ? _yeniPlan.KabulTarihi
             : DateTime.UtcNow;
 
-        var tahminiTarih = await ZamanServisi.TahminiBitisHesaplaAsync(baslangic, toplamDk);
+        var tahminiTarih = await ZamanServisi.TahminiBitisHesaplaAsync(baslangic, kritikYolDk);
 
-        _sonTahmin = new TeslimTahmini(tahminiTarih, iscilikDk, hazirlikDk, toplamDk, 1);
+        _sonTahmin = new TeslimTahmini(tahminiTarih, iscilikDk, hazirlikDk, kritikYolDk, 1);
         _yeniPlan.HedefTeslimTarihi = tahminiTarih;
 
         _hesaplaniyor = false;
@@ -345,6 +895,37 @@
             || plan.GeldigiBirlik.Contains(_aramaMetni, StringComparison.OrdinalIgnoreCase);
     }
 
+    private async Task RotaGoster(BakimPlani plan)
+    {
+        _rotaPlan = plan;
+        _rotaYukleniyor = true;
+        _rotaSablonlari = new();
+        StateHasChanged();
+
+        var tumSablonlar = await BakimService.GetParcaSablonlariAsync();
+        _rotaSablonlari = tumSablonlar
+            .Where(s => s.HeliTipi == plan.HeliTipi)
+            .OrderBy(s => s.SiraNo)
+            .ToList();
+
+        _rotaYukleniyor = false;
+        StateHasChanged();
+    }
+
+    private void RotaKapat()
+    {
+        _rotaPlan = null;
+        _rotaSablonlari = new();
+    }
+
+    private void YeniKabulAc()
+    {
+        _yeniPlan = new BakimPlani();
+        _isEdit = false;
+        _sonTahmin = null;
+        _formAcik = true;
+    }
+
     private void DuzenleHazirla(BakimPlani plan)
     {
         _yeniPlan = new BakimPlani
@@ -359,6 +940,7 @@
         };
         _isEdit = true;
         _sonTahmin = null;
+        _formAcik = true;
         Snackbar.Add($"{plan.SeriNo} düzenleme moduna alındı.", Severity.Info);
     }
 
@@ -367,6 +949,7 @@
         _yeniPlan = new BakimPlani();
         _isEdit = false;
         _sonTahmin = null;
+        _formAcik = false;
     }
 
     private async Task SilBakim(BakimPlani plan)
@@ -414,6 +997,7 @@
             _yeniPlan = new BakimPlani();
             _isEdit = false;
             _sonTahmin = null;
+            _formAcik = false;
             await VerileriListele();
         }
         else
@@ -429,4 +1013,26 @@
         BakimDurumu.Tamamlandi  => Color.Success,
         _                        => Color.Default
     };
+
+    private string GetCardStyle(BakimPlani plan)
+    {
+        if (plan.GenelDurumEnum == BakimDurumu.Tamamlandi)
+        {
+            return "opacity: 0.75; border: 1px solid rgba(16, 185, 129, 0.4) !important; background: rgba(16, 185, 129, 0.03) !important;";
+        }
+        if (plan.HedefTeslimTarihi.HasValue)
+        {
+            var hedef = plan.HedefTeslimTarihi.Value.ToLocalTime().Date;
+            var kalanGun = (hedef - DateTime.Today).TotalDays;
+            if (kalanGun < 0)
+            {
+                return "border: 1px solid rgba(239, 68, 68, 0.5) !important; box-shadow: 0 0 15px rgba(239, 68, 68, 0.15) !important; background: rgba(239, 68, 68, 0.02) !important;";
+            }
+            if (kalanGun <= 3)
+            {
+                return "border: 1px solid rgba(250, 204, 21, 0.5) !important; box-shadow: 0 0 10px rgba(250, 204, 21, 0.1) !important; background: rgba(250, 204, 21, 0.02) !important;";
+            }
+        }
+        return "border: 1px solid rgba(255, 255, 255, 0.08) !important; background: rgba(15, 20, 25, 0.6) !important;";
+    }
 }

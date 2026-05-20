@@ -2,6 +2,7 @@
 @using MroPlan.Models
 @using MroPlan.Services
 @using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.AspNetCore.Components.Web
 @inject IYetkinlikService YetkinlikService
 @inject IPersonelService PersonelService
 @inject IBakimService BakimService
@@ -77,14 +78,6 @@
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         position: relative;
     }
-    .sv-badge.suresi-dolmus { outline: 2px solid #ef4444; outline-offset: 2px; }
-    .sv-badge.suresi-yaklasan { outline: 2px solid #f59e0b; outline-offset: 2px; }
-
-    .expire-dot {
-        position: absolute; top: -3px; right: -3px;
-        width: 8px; height: 8px; border-radius: 50%;
-    }
-
     .legend-item { display: flex; align-items: center; gap: 6px; }
 
     .filter-select { --mud-palette-text-primary: #f8fafc; --mud-palette-action-default: #facc15; }
@@ -154,9 +147,15 @@
             </div>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <div class="kpi-card animate-in" style="border-color:@(_kpiSuresiDolmus > 0 ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.05)")">
-                <div class="kpi-value" style="color:@(_kpiSuresiDolmus > 0 ? "#f87171" : "rgba(255,255,255,0.3)");">@_kpiSuresiDolmus</div>
-                <div class="kpi-label">SÜRESİ DOLMUŞ SERTİFİKA</div>
+            <div class="kpi-card animate-in" style="border-color:rgba(168,85,247,0.3)">
+                <div class="kpi-value" style="color:#a855f7;">@_kpiGelistirmeAdayi</div>
+                <div class="kpi-label">GELİŞTİRME ADAYI</div>
+            </div>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <div class="kpi-card animate-in" style="border-color:rgba(249,115,22,0.3)">
+                <div class="kpi-value" style="color:#f97316;">@_kpiTekBagimli</div>
+                <div class="kpi-label">TEK BAĞIMLI PARÇA</div>
             </div>
         </MudItem>
     </MudGrid>
@@ -177,6 +176,18 @@
                 }
             </div>
             
+            <div class="d-flex align-center gap-3">
+                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" Class="rounded-lg overflow-hidden">
+                    <MudButton OnClick="@(() => { _kapsamaModu = false; StateHasChanged(); })"
+                               Variant="@(_kapsamaModu ? Variant.Outlined : Variant.Filled)"
+                               Style="font-weight:800; font-size:0.7rem; height:36px;">SV MOD</MudButton>
+                    <MudButton OnClick="@(() => { _kapsamaModu = true; StateHasChanged(); })"
+                               Variant="@(_kapsamaModu ? Variant.Filled : Variant.Outlined)"
+                               Color="@(_kapsamaModu ? Color.Warning : Color.Default)"
+                               Style="font-weight:800; font-size:0.7rem; height:36px;">KAPSAMA MOD</MudButton>
+                </MudButtonGroup>
+            </div>
+
             <div class="d-flex align-center gap-3 flex-wrap">
                 <MudSelect T="string" Value="@_seciliHeliTipi" ValueChanged="OnHeliTipiDegisti"
                            Placeholder="Uçak Tipi" Variant="Variant.Outlined" Margin="Margin.Dense" 
@@ -280,21 +291,49 @@
                                 {
                                     var ytk = GetYetkinlik(personel.SicilNo, parca.ParcaPN);
                                     var sv = ytk?.YetkinlikSeviyesi ?? 0;
-                                    var suresiDolmus = ytk?.GecerlilikTarihi.HasValue == true && ytk.GecerlilikTarihi.Value < DateTime.UtcNow;
-                                    var suresiYaklasan = !suresiDolmus && ytk?.GecerlilikTarihi.HasValue == true && ytk.GecerlilikTarihi.Value < DateTime.UtcNow.AddDays(30);
-                                    <td class="matrix-cell" @onclick="@(() => HucreTikla(personel, parca, ytk))" title="@GetTooltipText(personel, parca, ytk, sv, suresiDolmus, suresiYaklasan)">
-                                        <div class="sv-badge @(suresiDolmus ? "suresi-dolmus" : suresiYaklasan ? "suresi-yaklasan" : "")"
-                                             style="background:@SvRenk(sv); color:@(sv > 0 ? "black" : "rgba(255,255,255,0.2)")">
-                                            @sv
-                                            @if (suresiDolmus)
+                                    <td class="matrix-cell" @onclick="@(() => HucreTikla(personel, parca, ytk))" title="@GetTooltipText(personel, parca, ytk, sv)">
+                                        @if (!_kapsamaModu)
+                                        {
+                                            @* SV Modu: badge + kart ilerleme çubuğu *@
+                                            int esik     = SvEsikler.SonrakiEsik(sv);
+                                            int baseline = SvEsikler.KumulatifEsik(sv);
+                                            int done     = ytk?.TamamlananKartSayisi ?? 0;
+                                            int pct      = esik > 0 && esik != int.MaxValue
+                                                           ? Math.Min(100, Math.Max(0, (done - baseline) * 100 / esik))
+                                                           : 0;
+                                            <div class="sv-badge"
+                                                 style="background:@SvRenk(sv); color:@(sv > 0 ? "black" : "rgba(255,255,255,0.2)")">
+                                                @sv
+                                            </div>
+                                            @if (sv < 5 && esik != int.MaxValue && esik > 0 && pct > 0)
                                             {
-                                                <div class="expire-dot" style="background:#ef4444;"></div>
+                                                <div style="width:34px; height:3px; background:rgba(255,255,255,0.08); border-radius:2px; margin:3px auto 0;">
+                                                    <div style="width:@(pct)%; height:100%; background:#facc15; border-radius:2px; transition:width 0.3s;"></div>
+                                                </div>
                                             }
-                                            else if (suresiYaklasan)
+                                            @if (_aktifEgitimler.Contains((personel.Id, parca.Id)))
                                             {
-                                                <div class="expire-dot" style="background:#f59e0b;"></div>
+                                                <div style="font-size:0.5rem; font-weight:900; color:#f59e0b; letter-spacing:0.05em; margin-top:2px; line-height:1;">EĞİTİMDE</div>
                                             }
-                                        </div>
+                                        }
+                                        else
+                                        {
+                                            @* Kapsama Modu: o parçada SV≥3 kaç kişi var *@
+                                            int sv3plus = _sv3PlusPerParca.GetValueOrDefault(parca.Id, 0);
+                                            string kapBg = sv3plus == 0 ? "rgba(239,68,68,0.25)"
+                                                         : sv3plus == 1 ? "rgba(249,115,22,0.25)"
+                                                         : sv3plus == 2 ? "rgba(234,179,8,0.25)"
+                                                         : "rgba(34,197,94,0.25)";
+                                            string kapFg = sv3plus == 0 ? "#f87171"
+                                                         : sv3plus == 1 ? "#fb923c"
+                                                         : sv3plus == 2 ? "#fde047"
+                                                         : "#4ade80";
+                                            <div style="width:34px; height:34px; border-radius:8px; background:@kapBg; color:@kapFg;
+                                                        display:inline-flex; align-items:center; justify-content:center;
+                                                        font-weight:900; font-size:0.9rem;">
+                                                @sv3plus
+                                            </div>
+                                        }
                                     </td>
                                 }
                             </tr>
@@ -313,84 +352,387 @@
                     <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">@SvAciklama(i)</MudText>
                 </div>
             }
-            <div class="legend-item">
-                <div style="width:20px; height:20px; border-radius:6px; background:rgba(239,68,68,0.2); outline:2px solid #ef4444; outline-offset:1px;"></div>
-                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">Süresi Dolmuş</MudText>
-            </div>
-            <div class="legend-item">
-                <div style="width:20px; height:20px; border-radius:6px; background:rgba(245,158,11,0.2); outline:2px solid #f59e0b; outline-offset:1px;"></div>
-                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">&lt;30 Gün</MudText>
-            </div>
         </div>
     }
     </div>
 
+    @* ─── RİSK ANALİZİ & GELİŞTİRME PANELİ ─── *@
+    @if (_kapsamaAnalizi.Any())
+    {
+        <MudExpansionPanels Class="mt-6 animate-in" Dense="true">
+            <MudExpansionPanel Style="background:rgba(15,23,42,0.7); border:1px solid rgba(250,204,21,0.15); border-radius:16px;">
+                <TitleContent>
+                    <div class="d-flex align-center gap-3">
+                        <MudIcon Icon="@Icons.Material.Rounded.Analytics" Color="Color.Warning" />
+                        <MudText Style="font-weight:900; color:#facc15;">RİSK ANALİZİ &amp; GELİŞTİRME</MudText>
+                        @{ var acilSayisi = _kapsamaAnalizi.Count(k => k.RiskSeviyesi == "ACİL"); }
+                        @if (acilSayisi > 0)
+                        {
+                            <span @onclick="@(() => _riskFiltreRisk = _riskFiltreRisk == "ACİL" ? "" : "ACİL")"
+                                  @onclick:stopPropagation="true"
+                                  style="@($"cursor:pointer; display:inline-flex; align-items:center; padding:3px 10px; border-radius:12px; font-weight:900; font-size:0.65rem; border:1px solid rgba(255,68,68,0.4); transition:all 0.2s; user-select:none; {(_riskFiltreRisk == "ACİL" ? "background:#ff4444; color:#000;" : "background:rgba(255,68,68,0.2); color:#ff4444;")}")">
+                                ⚠ @acilSayisi ACİL
+                            </span>
+                        }
+                        @{ var kritikSayisi = _kapsamaAnalizi.Count(k => k.RiskSeviyesi == "KRİTİK"); }
+                        @if (kritikSayisi > 0)
+                        {
+                            <span @onclick="@(() => _riskFiltreRisk = _riskFiltreRisk == "KRİTİK" ? "" : "KRİTİK")"
+                                  @onclick:stopPropagation="true"
+                                  style="@($"cursor:pointer; display:inline-flex; align-items:center; padding:3px 10px; border-radius:12px; font-weight:800; font-size:0.65rem; transition:all 0.2s; user-select:none; {(_riskFiltreRisk == "KRİTİK" ? "background:#f87171; color:#000;" : "background:rgba(239,68,68,0.15); color:#f87171;")}")">
+                                @kritikSayisi KRİTİK
+                            </span>
+                        }
+                        @{ var yuksekSayisi = _kapsamaAnalizi.Count(k => k.RiskSeviyesi == "YÜKSEK"); }
+                        @if (yuksekSayisi > 0)
+                        {
+                            <span @onclick="@(() => _riskFiltreRisk = _riskFiltreRisk == "YÜKSEK" ? "" : "YÜKSEK")"
+                                  @onclick:stopPropagation="true"
+                                  style="@($"cursor:pointer; display:inline-flex; align-items:center; padding:3px 10px; border-radius:12px; font-weight:800; font-size:0.65rem; transition:all 0.2s; user-select:none; {(_riskFiltreRisk == "YÜKSEK" ? "background:#fb923c; color:#000;" : "background:rgba(249,115,22,0.15); color:#fb923c;")}")">
+                                @yuksekSayisi YÜKSEK
+                            </span>
+                        }
+                    </div>
+                </TitleContent>
+                <ChildContent>
+                    @{
+                        var riskAtolveler = _kapsamaAnalizi.Select(k => k.AtolyeAdi).Distinct().OrderBy(a => a).ToList();
+                        var riskHeliTipleri = _kapsamaAnalizi
+                            .Select(k => _parcalar.FirstOrDefault(p => p.ParcaPN == k.ParcaPN)?.HeliTipi ?? "")
+                            .Where(h => !string.IsNullOrEmpty(h)).Distinct().OrderBy(h => h).ToList();
+                        var filtreliKapsama = _kapsamaAnalizi
+                            .Where(k => (string.IsNullOrEmpty(_riskFiltreAtolye) || k.AtolyeAdi == _riskFiltreAtolye)
+                                     && (string.IsNullOrEmpty(_riskFiltreHeli)   || (_parcalar.FirstOrDefault(p => p.ParcaPN == k.ParcaPN)?.HeliTipi ?? "") == _riskFiltreHeli)
+                                     && (string.IsNullOrEmpty(_riskFiltreRisk)   || k.RiskSeviyesi == _riskFiltreRisk))
+                            .ToList();
+                    }
+                    <div class="d-flex align-center gap-3 mb-3 flex-wrap">
+                        <MudSelect T="string" @bind-Value="_riskFiltreAtolye" Placeholder="Tüm Atölyeler"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:220px;"
+                                   AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value='@("")'>Tüm Atölyeler</MudSelectItem>
+                            @foreach (var a in riskAtolveler)
+                            {
+                                <MudSelectItem Value="@a">@a</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="string" @bind-Value="_riskFiltreHeli" Placeholder="Tüm Uçak Tipleri"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:180px;"
+                                   AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value='@("")'>Tüm Uçak Tipleri</MudSelectItem>
+                            @foreach (var h in riskHeliTipleri)
+                            {
+                                <MudSelectItem Value="@h">@h</MudSelectItem>
+                            }
+                        </MudSelect>
+                        @if (!string.IsNullOrEmpty(_riskFiltreAtolye) || !string.IsNullOrEmpty(_riskFiltreHeli) || !string.IsNullOrEmpty(_riskFiltreRisk))
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text"
+                                       Style="color:rgba(255,255,255,0.4); font-weight:700; font-size:0.7rem;"
+                                       OnClick="@(() => { _riskFiltreAtolye = ""; _riskFiltreHeli = ""; _riskFiltreRisk = ""; })">
+                                Filtreyi Temizle
+                            </MudButton>
+                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3);">@filtreliKapsama.Count sonuç</MudText>
+                        }
+                    </div>
+                    <MudTable Items="filtreliKapsama" Dense="true" Hover="true" Striped="false"
+                              Style="background:transparent;" Class="mt-2">
+                        <HeaderContent>
+                            <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">ATÖLYE</MudTh>
+                            <MudTh Style="color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">PARÇA / TİP</MudTh>
+                            <MudTh Style="text-align:center; color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">SV1</MudTh>
+                            <MudTh Style="text-align:center; color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">SV2</MudTh>
+                            <MudTh Style="text-align:center; color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">SV3+</MudTh>
+                            <MudTh Style="text-align:center; color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">SV4+ EĞİTMEN</MudTh>
+                            <MudTh Style="text-align:center; color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">PİPELİNE</MudTh>
+                            <MudTh Style="text-align:center; color:rgba(255,255,255,0.5); font-size:0.7rem; font-weight:800;">RİSK</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            @{ var ctx2 = context; }
+                            <MudTd Style="font-size:0.8rem;">@ctx2.AtolyeAdi</MudTd>
+                            <MudTd>
+                                <div style="font-size:0.8rem; font-weight:700;">@ctx2.ParcaAdi</div>
+                                <div style="font-size:0.6rem; color:rgba(255,255,255,0.3);">@ctx2.ParcaPN @(!string.IsNullOrEmpty(ctx2.HeliTipi) ? $"· {ctx2.HeliTipi}" : "")</div>
+                            </MudTd>
+                            <MudTd Style="text-align:center; font-size:0.85rem; font-weight:700; color:#60a5fa;">@ctx2.Sv1Sayisi</MudTd>
+                            <MudTd Style="text-align:center; font-size:0.85rem; font-weight:700; color:#a78bfa;">@ctx2.Sv2Sayisi</MudTd>
+                            <MudTd Style="text-align:center;">
+                                <span style="font-weight:900; font-size:0.9rem; color:@KapsamaRenk(ctx2.RiskSeviyesi);">@ctx2.Sv3PlusSayisi</span>
+                            </MudTd>
+                            <MudTd Style="text-align:center;">
+                                @if (ctx2.Sv4PlusSayisi > 0)
+                                {
+                                    <span style="font-weight:800; font-size:0.85rem; color:#4ade80;">@ctx2.Sv4PlusSayisi</span>
+                                }
+                                else
+                                {
+                                    <span style="font-weight:600; font-size:0.8rem; color:rgba(255,255,255,0.2);">—</span>
+                                }
+                            </MudTd>
+                            <MudTd Style="text-align:center;">
+                                @if (ctx2.PipelineVar)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Rounded.TrendingUp" Size="Size.Small"
+                                             Style="color:#38bdf8; font-size:1rem;" Title="SV1/SV2'de gelişimde personel var" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Rounded.Block" Size="Size.Small"
+                                             Style="color:rgba(255,255,255,0.15); font-size:0.9rem;" Title="Pipeline yok" />
+                                }
+                            </MudTd>
+                            <MudTd Style="text-align:center;">
+                                <span style="background:@RiskBg(ctx2.RiskSeviyesi); color:@KapsamaRenk(ctx2.RiskSeviyesi);
+                                             font-weight:800; font-size:0.65rem; padding:3px 8px; border-radius:6px;">
+                                    @ctx2.RiskSeviyesi
+                                </span>
+                            </MudTd>
+                            <MudTd>
+                                @if (ctx2.RiskSeviyesi != "TAMAM" && ctx2.RiskSeviyesi != "İYİ")
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                               Style="@($"font-weight:800; font-size:0.7rem; height:28px; {GelistirButonStil(ctx2.RiskSeviyesi)}")"
+                                               OnClick="@(() => GelistirDialogAc(ctx2))">
+                                        @(ctx2.RiskSeviyesi == "ACİL" ? "HEMEN ATAYIN !" : "GELİŞTİR →")
+                                    </MudButton>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </ChildContent>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+
 </MudContainer>
 
-@* ===== DRAWER: SERTİFİKA GEÇMİŞİ ===== *@
-<MudDrawer @bind-Open="_gecmisDrawerAcik" Anchor="Anchor.End" Elevation="4"
-           Variant="DrawerVariant.Temporary" Width="380px">
-    <div class="drawer-bg pa-6">
-        <div class="d-flex align-center justify-space-between mb-6">
-            <div>
-                <MudText Typo="Typo.h6" Style="font-weight:900; color:#facc15;">GEÇMIŞ</MudText>
-                @if (_gecmisPersonel != null)
+@* ─── HIZLI GELİŞTİRME DIALOG ─── *@
+<MudDialog @bind-Visible="_gelistirDialogAcik"
+           Options="@(new DialogOptions { MaxWidth=MaxWidth.Small, FullWidth=true, CloseButton=true })">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Rounded.TrendingUp" Color="Color.Warning" />
+            <MudText Typo="Typo.h6" Style="font-weight:900;">
+                GELİŞİM BAŞLAT — @(_secilenKapsama?.ParcaAdi ?? "")
+            </MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (!_gelistirAdaylar.Any())
+        {
+            <div class="d-flex flex-column align-center pa-8 gap-2">
+                <MudIcon Icon="@Icons.Material.Rounded.CheckCircle" Style="font-size:2.5rem; color:#4ade80;" />
+                <MudText Style="color:rgba(255,255,255,0.5); font-weight:700;">
+                    @(_gelistirDegisenVarMi ? "Tüm adaylar atandı." : "Bu parça için atanabilecek personel yok.")
+                </MudText>
+            </div>
+        }
+        else
+        {
+            var gorunenAdaylar = _gelistirSvFiltre == -1
+                ? _gelistirAdaylar
+                : _gelistirAdaylar.Where(x => (x.Ytk?.YetkinlikSeviyesi ?? 0) == _gelistirSvFiltre).ToList();
+            <div class="d-flex align-center justify-space-between mb-2 pa-2 rounded-lg"
+                 style="background:rgba(250,204,21,0.05); border:1px solid rgba(250,204,21,0.15);">
+                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5); font-weight:700;">
+                    @gorunenAdaylar.Count kişi bekliyor
+                </MudText>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                           Style="font-weight:900; font-size:0.75rem; color:black;"
+                           Disabled="_topluBaslatYukleniyor"
+                           OnClick="TumunuBaslat">
+                    @if (_topluBaslatYukleniyor)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                        <span>ATANIYOR...</span>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Rounded.FlashOn" Size="Size.Small" Class="mr-1" />
+                        <span>TÜMÜNÜ BAŞLAT</span>
+                    }
+                </MudButton>
+            </div>
+
+            @* SV Filtre Chip'leri *@
+            <div class="d-flex align-center gap-2 mb-3 flex-wrap">
+                @{ var svRenkler = new Dictionary<int,string> { {0,"#94a3b8"},{1,"#60a5fa"},{2,"#a78bfa"},{3,"#facc15"},{4,"#10B981"} }; }
+                <span @onclick="@(() => _gelistirSvFiltre = -1)"
+                      style="@($"cursor:pointer; padding:3px 10px; border-radius:10px; font-size:0.65rem; font-weight:800; user-select:none; transition:all 0.15s; {(_gelistirSvFiltre == -1 ? "background:rgba(255,255,255,0.15); color:white;" : "background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.4);")}")">
+                    TÜMÜ (@_gelistirAdaylar.Count)
+                </span>
+                @foreach (var sv in new[] { 0, 1, 2, 3, 4 })
                 {
-                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">@_gecmisPersonel.AdSoyad · @_gecmisPersonel.SicilNo</MudText>
+                    var svSayi = _gelistirAdaylar.Count(x => (x.Ytk?.YetkinlikSeviyesi ?? 0) == sv);
+                    if (svSayi == 0) continue;
+                    var svRenk = svRenkler.GetValueOrDefault(sv, "#facc15");
+                    var aktif  = _gelistirSvFiltre == sv;
+                    var svRef  = sv;
+                    <span @onclick="@(() => _gelistirSvFiltre = _gelistirSvFiltre == svRef ? -1 : svRef)"
+                          style="@($"cursor:pointer; padding:3px 10px; border-radius:10px; font-size:0.65rem; font-weight:800; user-select:none; transition:all 0.15s; border:1px solid {svRenk}; {(aktif ? $"background:{svRenk}; color:black;" : $"background:transparent; color:{svRenk};")}")">
+                        SV@(sv) (@svSayi)
+                    </span>
                 }
             </div>
-            <MudIconButton Icon="@Icons.Material.Rounded.Close" Color="Color.Default"
-                           OnClick="@(() => _gecmisDrawerAcik = false)" />
-        </div>
 
+            @foreach (var (personel, ytk) in gorunenAdaylar.ToList())
+            {
+                int svD       = ytk?.YetkinlikSeviyesi ?? 0;
+                int doneD     = ytk?.TamamlananKartSayisi ?? 0;
+                int esikD     = SvEsikler.SonrakiEsik(svD);
+                int baselineD = SvEsikler.KumulatifEsik(svD);
+                int pctD      = esikD > 0 && esikD != int.MaxValue
+                                ? Math.Min(100, Math.Max(0, (doneD - baselineD) * 100 / esikD))
+                                : 0;
+                <div class="d-flex align-center gap-3 pa-3 mb-2 rounded-lg"
+                     style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);">
+                    <MudAvatar Size="Size.Small"
+                               Style="background:#facc15; color:black; font-weight:900; font-size:0.75rem; width:32px; height:32px; flex-shrink:0;">
+                        @(personel.Ad.Length > 0 ? personel.Ad[0] : '?')
+                    </MudAvatar>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:800; font-size:0.85rem;">@personel.AdSoyad</div>
+                        <div class="d-flex align-center gap-2 mt-1">
+                            <div class="sv-badge" style="width:22px; height:22px; font-size:0.6rem; background:@SvRenk(svD); color:black; border-radius:5px;">@svD</div>
+                            <div style="flex:1; height:4px; background:rgba(255,255,255,0.08); border-radius:2px;">
+                                <div style="width:@(pctD)%; height:100%; background:#facc15; border-radius:2px;"></div>
+                            </div>
+                            <span style="font-size:0.6rem; color:rgba(255,255,255,0.4); white-space:nowrap;">@doneD/@(esikD == int.MaxValue ? "—" : esikD.ToString()) kart</span>
+                        </div>
+                    </div>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                               Style="font-weight:800; font-size:0.7rem; height:30px; flex-shrink:0;"
+                               OnClick="@(async () => await GelistirmeyeBasla(personel, ytk))">
+                        BAŞLAT
+                    </MudButton>
+                </div>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="GelistirDialogKapat"
+                   Variant="Variant.Text" Style="color:rgba(255,255,255,0.4); font-weight:700;">KAPAT</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ===== DIALOG: SERTİFİKA GEÇMİŞİ ===== *@
+<MudDialog @bind-Visible="_gecmisDrawerAcik"
+           Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true, CloseButton=true, CloseOnEscapeKey=true })">
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between" style="width:100%;">
+            <div class="d-flex align-center gap-3">
+                <MudIcon Icon="@Icons.Material.Rounded.History" Color="Color.Warning" />
+                <div>
+                    <MudText Typo="Typo.h6" Style="font-weight:900; color:#facc15;">YETKİNLİK GEÇMİŞİ</MudText>
+                    @if (_gecmisPersonel != null)
+                    {
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">@_gecmisPersonel.AdSoyad · @_gecmisPersonel.SicilNo</MudText>
+                    }
+                </div>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
         @if (_gecmisYukleniyor)
         {
             <div class="d-flex justify-center py-8">
                 <MudProgressCircular Color="Color.Warning" Indeterminate="true" />
             </div>
         }
-        else if (!_gecmisKayitlar.Any())
-        {
-            <div class="d-flex flex-column align-center py-10" style="color:rgba(255,255,255,0.3);">
-                <MudIcon Icon="@Icons.Material.Rounded.HistoryToggleOff" Style="font-size:3rem;" />
-                <MudText Class="mt-2" Typo="Typo.body2">Kayıt bulunamadı.</MudText>
-            </div>
-        }
         else
         {
-            @foreach (var (kayit, idx) in _gecmisKayitlar.Select((k, i) => (k, i)))
+            @* Uçak tipi filtresi *@
+            var gecmisHeliTipleri = _gecmisKayitlar
+                .Select(k => _parcalar.FirstOrDefault(p => p.ParcaPN == k.ParcaPN)?.HeliTipi ?? "")
+                .Where(h => !string.IsNullOrEmpty(h)).Distinct().OrderBy(h => h).ToList();
+
+            @if (gecmisHeliTipleri.Any())
             {
-                <div class="d-flex gap-3">
-                    <div class="d-flex flex-column align-center">
-                        <div class="timeline-dot" style="background:@SvRenk(kayit.YeniSeviye); color:@SvRenk(kayit.YeniSeviye);"></div>
-                        @if (idx < _gecmisKayitlar.Count - 1)
-                        {
-                            <div class="timeline-line"></div>
-                        }
-                    </div>
-                    <div class="mb-4" style="flex:1;">
-                        <div class="d-flex align-center gap-2">
-                            <MudText Typo="Typo.body2" Style="font-weight:800; color:#e2e8f0;">@(_parcalar.FirstOrDefault(p => p.ParcaPN == kayit.ParcaPN)?.ParcaAdi ?? kayit.ParcaPN)</MudText>
-                            <span style="font-size:0.7rem; color:rgba(255,255,255,0.3);">SV@kayit.EskiSeviye → SV@kayit.YeniSeviye</span>
+                <div class="d-flex align-center gap-2 mb-4 flex-wrap">
+                    <MudChip T="string" Size="Size.Small"
+                             Variant="@(string.IsNullOrEmpty(_gecmisHeliFiltre) ? Variant.Filled : Variant.Outlined)"
+                             Color="Color.Warning"
+                             OnClick="@(() => _gecmisHeliFiltre = "")"
+                             Style="font-weight:800; font-size:0.7rem;">
+                        TÜMÜ (@_gecmisKayitlar.Count)
+                    </MudChip>
+                    @foreach (var tip in gecmisHeliTipleri)
+                    {
+                        var tipSayisi = _gecmisKayitlar.Count(k => (_parcalar.FirstOrDefault(p => p.ParcaPN == k.ParcaPN)?.HeliTipi ?? "") == tip);
+                        <MudChip T="string" Size="Size.Small"
+                                 Variant="@(_gecmisHeliFiltre == tip ? Variant.Filled : Variant.Outlined)"
+                                 Color="Color.Warning"
+                                 OnClick="@(() => _gecmisHeliFiltre = tip)"
+                                 Style="font-weight:800; font-size:0.7rem;">
+                            @tip (@tipSayisi)
+                        </MudChip>
+                    }
+                </div>
+            }
+
+            var filtreliKayitlar = (string.IsNullOrEmpty(_gecmisHeliFiltre)
+                ? _gecmisKayitlar
+                : _gecmisKayitlar.Where(k => (_parcalar.FirstOrDefault(p => p.ParcaPN == k.ParcaPN)?.HeliTipi ?? "") == _gecmisHeliFiltre))
+                .ToList();
+
+            @if (!filtreliKayitlar.Any())
+            {
+                <div class="d-flex flex-column align-center py-10" style="color:rgba(255,255,255,0.3);">
+                    <MudIcon Icon="@Icons.Material.Rounded.HistoryToggleOff" Style="font-size:3rem;" />
+                    <MudText Class="mt-2" Typo="Typo.body2">Kayıt bulunamadı.</MudText>
+                </div>
+            }
+            else
+            {
+                <div style="max-height:520px; overflow-y:auto; padding-right:4px;">
+                    @foreach (var (kayit, idx) in filtreliKayitlar.Select((k, i) => (k, i)))
+                    {
+                        var parcaAdi = _parcalar.FirstOrDefault(p => p.ParcaPN == kayit.ParcaPN)?.ParcaAdi ?? kayit.ParcaPN;
+                        var heliTip  = _parcalar.FirstOrDefault(p => p.ParcaPN == kayit.ParcaPN)?.HeliTipi ?? "";
+                        <div class="d-flex gap-3">
+                            <div class="d-flex flex-column align-center">
+                                <div class="timeline-dot" style="background:@SvRenk(kayit.YeniSeviye); color:@SvRenk(kayit.YeniSeviye);"></div>
+                                @if (idx < filtreliKayitlar.Count - 1)
+                                {
+                                    <div class="timeline-line"></div>
+                                }
+                            </div>
+                            <div class="mb-4" style="flex:1;">
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudText Typo="Typo.body2" Style="font-weight:800; color:#e2e8f0;">@parcaAdi</MudText>
+                                    <span style="background:@SvRenk(kayit.EskiSeviye); color:black; font-weight:900; font-size:0.6rem; padding:1px 6px; border-radius:4px;">SV@(kayit.EskiSeviye)</span>
+                                    <MudIcon Icon="@Icons.Material.Rounded.ArrowForward" Style="font-size:0.75rem; color:rgba(255,255,255,0.3);" />
+                                    <span style="background:@SvRenk(kayit.YeniSeviye); color:black; font-weight:900; font-size:0.6rem; padding:1px 6px; border-radius:4px;">SV@(kayit.YeniSeviye)</span>
+                                    @if (!string.IsNullOrEmpty(heliTip))
+                                    {
+                                        <span style="font-size:0.55rem; color:rgba(255,255,255,0.3); background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px;">@heliTip</span>
+                                    }
+                                </div>
+                                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.2); font-size:0.6rem;">@kayit.ParcaPN</MudText>
+                                @if (!string.IsNullOrEmpty(kayit.IslemNotu))
+                                {
+                                    <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5);">@kayit.IslemNotu</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3); font-size:0.65rem;">
+                                    @kayit.IslemTarihi.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                    @if (!string.IsNullOrEmpty(kayit.IslemYapanSicil) && kayit.IslemYapanSicil != "sistem")
+                                    {
+                                        <span> · @kayit.IslemYapanSicil</span>
+                                    }
+                                </MudText>
+                            </div>
                         </div>
-                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.2); font-size:0.6rem;">@kayit.ParcaPN</MudText>
-                        @if (!string.IsNullOrEmpty(kayit.IslemNotu))
-                        {
-                            <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.5);">@kayit.IslemNotu</MudText>
-                        }
-                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.3); font-size:0.65rem;">
-                            @kayit.IslemTarihi.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-                            @if (!string.IsNullOrEmpty(kayit.IslemYapanSicil) && kayit.IslemYapanSicil != "sistem")
-                            {
-                                <span> · @kayit.IslemYapanSicil</span>
-                            }
-                        </MudText>
-                    </div>
+                    }
                 </div>
             }
         }
-    </div>
-</MudDrawer>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => { _gecmisDrawerAcik = false; _gecmisHeliFiltre = ""; })"
+                   Variant="Variant.Text" Style="color:rgba(255,255,255,0.4); font-weight:700;">KAPAT</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @* ===== DIALOG: YETKİNLİK KAYDET/GÜNCELLE ===== *@
 <MudDialog @bind-Visible="_dialogAcik" Options="@(new DialogOptions { MaxWidth=(_duzenleYetkinlik != null ? MaxWidth.Small : MaxWidth.Medium), FullWidth=true, CloseButton=true })">
@@ -419,7 +761,7 @@
         {
             <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" 
                      Color="Color.Warning" ActivePanelIndexChanged="OnActiveTabChanged"
-                     Style="background:transparent;" TabPanelClass="pt-4 pa-0">
+                     Style="background:transparent;">
                 
                 <MudTabPanel Text="STANDART EKLEME" Style="font-weight:800;">
                     <MudGrid Spacing="3" Class="mt-1">
@@ -973,13 +1315,34 @@
     List<YetkinlikAcigi> _gapAciklari = [];
 
     // ── KPI ────────────────────────────────────────────────
-    int _kpiUzman, _kpiIleri, _kpiGap, _kpiSuresiDolmus;
+    int _kpiUzman, _kpiIleri, _kpiGap;
+    int _kpiGelistirmeAdayi, _kpiTekBagimli;
+
+    // ── Aktif Eğitimler (matris "EĞİTİMDE" gösterimi) ─────
+    HashSet<(int, int)> _aktifEgitimler = new();
+
+    // ── Kapsama Modu ───────────────────────────────────────
+    bool _kapsamaModu = false;
+    List<KapsamaAnalizi> _kapsamaAnalizi = [];
+    string _riskFiltreAtolye = "";
+    string _riskFiltreHeli   = "";
+    string _riskFiltreRisk   = "";
+    Dictionary<int, int> _sv3PlusPerParca = new(); // ParcaSablonuId → SV3+ count
+
+    // ── Hızlı Geliştirme Dialog ────────────────────────────
+    bool _gelistirDialogAcik;
+    bool _gelistirDegisenVarMi;
+    bool _topluBaslatYukleniyor;
+    int  _gelistirSvFiltre = -1;   // -1 = hepsi
+    KapsamaAnalizi? _secilenKapsama;
+    List<(Personel Personel, Models.Yetkinlik? Ytk)> _gelistirAdaylar = [];
 
     // ── Geçmiş Drawer ──────────────────────────────────────
     bool _gecmisDrawerAcik;
     bool _gecmisYukleniyor;
     Personel? _gecmisPersonel;
     List<YetkinlikGecmisi> _gecmisKayitlar = [];
+    string _gecmisHeliFiltre = "";
 
     // ── Yetkinlik Dialog ───────────────────────────────────
     bool _dialogAcik;
@@ -988,9 +1351,6 @@
     int? _formPersonelId;
     int? _formParcaId;
     int _formSeviye = 1;
-    DateTime? _formSertifikaTarihi;
-    DateTime? _formGecerlilikTarihi;
-    string _formBelgeNo = "";
     string _formAciklama = "";
     int _activeTabIndex = 0;
     ParcaSablonu? DraggedParca { get; set; }
@@ -1043,6 +1403,8 @@
             HesaplaKpi();
             Filtrele();
             await GapYukle();
+            _kapsamaAnalizi  = await YetkinlikService.GetKapsamaAnaliziAsync();
+            _aktifEgitimler  = await YetkinlikService.GetAktifEgitimParcalariAsync();
         }
         catch (Exception ex) { Snackbar.Add($"Yükleme hatası: {ex.Message}", Severity.Error); }
         finally { _yukleniyor = false; StateHasChanged(); }
@@ -1050,9 +1412,118 @@
 
     void HesaplaKpi()
     {
-        _kpiUzman       = _yetkinlikler.Count(y => y.YetkinlikSeviyesi >= 5);
-        _kpiIleri       = _yetkinlikler.Count(y => y.YetkinlikSeviyesi >= 4);
-        _kpiSuresiDolmus = _yetkinlikler.Count(y => y.GecerlilikTarihi.HasValue && y.GecerlilikTarihi.Value < DateTime.UtcNow);
+        _kpiUzman = _yetkinlikler.Count(y => y.YetkinlikSeviyesi >= 5);
+        _kpiIleri = _yetkinlikler.Count(y => y.YetkinlikSeviyesi >= 4);
+        _kpiGelistirmeAdayi = _yetkinlikler.Count(y => y.YetkinlikSeviyesi <= 2 && y.TamamlananKartSayisi > 0);
+        _kpiTekBagimli = _yetkinlikler
+            .Where(y => y.YetkinlikSeviyesi >= 3)
+            .GroupBy(y => y.ParcaSablonuId)
+            .Count(g => g.Count() == 1);
+        _sv3PlusPerParca = _yetkinlikler
+            .Where(y => y.YetkinlikSeviyesi >= 3)
+            .GroupBy(y => y.ParcaSablonuId)
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    static string KapsamaRenk(string risk) => risk switch
+    {
+        "ACİL"   => "#ff4444",
+        "KRİTİK" => "#f87171",
+        "YÜKSEK" => "#fb923c",
+        "ORTA"   => "#fde047",
+        "İYİ"    => "#86efac",
+        _         => "#4ade80"
+    };
+
+    static string RiskBg(string risk) => risk switch
+    {
+        "ACİL"   => "rgba(255,68,68,0.18)",
+        "KRİTİK" => "rgba(239,68,68,0.12)",
+        "YÜKSEK" => "rgba(249,115,22,0.12)",
+        "ORTA"   => "rgba(234,179,8,0.12)",
+        "İYİ"    => "rgba(134,239,172,0.12)",
+        _         => "rgba(34,197,94,0.12)"
+    };
+
+    static string GelistirButonStil(string risk) => risk switch
+    {
+        "ACİL"   => "font-weight:800; font-size:0.7rem; height:28px; border-color:#ff4444; color:#ff4444;",
+        "KRİTİK" => "font-weight:800; font-size:0.7rem; height:28px; border-color:#f87171; color:#f87171;",
+        "YÜKSEK" => "font-weight:800; font-size:0.7rem; height:28px; border-color:#fb923c; color:#fb923c;",
+        _         => "font-weight:800; font-size:0.7rem; height:28px; border-color:rgba(250,204,21,0.3); color:#facc15;"
+    };
+
+    async Task GelistirDialogAc(KapsamaAnalizi kapsama)
+    {
+        _secilenKapsama = kapsama;
+        var grup = _gruplar.FirstOrDefault(g => g.GrupAdi == kapsama.AtolyeAdi);
+        _gelistirAdaylar = _personeller
+            .Where(p => p.BakimGrubuId == grup?.Id)
+            .Select(p => (p, GetYetkinlik(p.SicilNo, kapsama.ParcaPN)))
+            .Where(x => (x.Item2?.YetkinlikSeviyesi ?? 0) < 5)   // SV5 max, geliştirilemez
+            .OrderBy(x => x.Item2?.YetkinlikSeviyesi ?? 0)
+            .ThenByDescending(x => x.Item2?.TamamlananKartSayisi ?? 0)
+            .ToList();
+        _gelistirSvFiltre = -1;
+        _gelistirDialogAcik = true;
+        await Task.CompletedTask;
+    }
+
+    async Task GelistirmeyeBasla(Personel personel, Models.Yetkinlik? ytk)
+    {
+        try
+        {
+            var parca = _parcalar.FirstOrDefault(p => p.ParcaPN == _secilenKapsama?.ParcaPN);
+            if (parca == null) { Snackbar.Add("Parça bulunamadı.", Severity.Warning); return; }
+
+            int mevcutSv = ytk?.YetkinlikSeviyesi ?? 0;
+            int hedefSv  = mevcutSv + 1; // Her zaman bir sonraki seviye
+
+            var modul = await YetkinlikService.EnsureModulAsync(parca.Id, hedefSv);
+
+            int surGun = SvEsikler.EgitimSuresiGun(mevcutSv);
+            var tahminiTarihler = new Dictionary<(int, int), DateTime>
+            {
+                [(personel.Id, modul.Id)] = DateTime.UtcNow.AddDays(surGun)
+            };
+            await YetkinlikService.PersonelEgitimlerOnayla([(personel.Id, modul.Id)], tahminiTarihler);
+            Snackbar.Add($"{personel.AdSoyad} → SV{modul.HedefYetkinlikSeviyesi} eğitimi planlandı ({surGun} gün).", Severity.Success);
+
+            // Kişiyi listeden düşür, dialog açık kalsın
+            _gelistirAdaylar.RemoveAll(x => x.Personel.Id == personel.Id);
+            _gelistirDegisenVarMi = true;
+            StateHasChanged();
+        }
+        catch (Exception ex) { Snackbar.Add($"Hata: {ex.Message}", Severity.Error); }
+    }
+
+    async Task GelistirDialogKapat()
+    {
+        _gelistirDialogAcik = false;
+        if (_gelistirDegisenVarMi)
+        {
+            _yetkinlikler   = await YetkinlikService.GetYetkinliklerAsync();
+            _kapsamaAnalizi = await YetkinlikService.GetKapsamaAnaliziAsync();
+            HesaplaKpi();
+            Filtrele();
+            _gelistirDegisenVarMi = false;
+            StateHasChanged();
+        }
+    }
+
+    async Task TumunuBaslat()
+    {
+        _topluBaslatYukleniyor = true;
+        StateHasChanged();
+        var hedefler = _gelistirSvFiltre == -1
+            ? _gelistirAdaylar.ToList()
+            : _gelistirAdaylar.Where(x => (x.Ytk?.YetkinlikSeviyesi ?? 0) == _gelistirSvFiltre).ToList();
+        foreach (var (p, ytk) in hedefler)
+        {
+            await GelistirmeyeBasla(p, ytk);
+        }
+        _topluBaslatYukleniyor = false;
+        StateHasChanged();
     }
 
     async Task GapYukle()
@@ -1115,6 +1586,7 @@
     async Task GeçmisAc(Personel personel)
     {
         _gecmisPersonel = personel;
+        _gecmisHeliFiltre = "";
         _gecmisDrawerAcik = true;
         _gecmisYukleniyor = true;
         StateHasChanged();
@@ -1130,9 +1602,6 @@
         _formPersonelId = personel.Id;
         _formParcaId = parca.Id;
         _formSeviye = ytk?.YetkinlikSeviyesi ?? 1;
-        _formSertifikaTarihi = ytk?.SertifikaTarihi?.ToLocalTime();
-        _formGecerlilikTarihi = ytk?.GecerlilikTarihi?.ToLocalTime();
-        _formBelgeNo = ytk?.SertifikaBelgeNo ?? "";
         _formAciklama = ytk?.Aciklama ?? "";
         _dialogAcik = true;
     }
@@ -1143,9 +1612,6 @@
         _formPersonelId = null;
         _formParcaId = null;
         _formSeviye = 1;
-        _formSertifikaTarihi = null;
-        _formGecerlilikTarihi = null;
-        _formBelgeNo = "";
         _formAciklama = "";
         _dialogAcik = true;
     }
@@ -1182,7 +1648,6 @@
                         ParcaPN = ytk.ParcaPN,
                         YetkinlikSeviyesi = ytk.YetkinlikSeviyesi,
                         SertifikaTarihi = ytk.SertifikaTarihi,
-                        GecerlilikTarihi = ytk.GecerlilikTarihi,
                         SertifikaBelgeNo = ytk.SertifikaBelgeNo,
                         Aciklama = ytk.Aciklama,
                         TamamlananKartSayisi = ytk.TamamlananKartSayisi
@@ -1229,9 +1694,6 @@
                 SicilNo = personel.SicilNo,
                 ParcaPN = parca.ParcaPN,
                 YetkinlikSeviyesi = _formSeviye,
-                SertifikaTarihi = _formSertifikaTarihi.HasValue ? DateTime.SpecifyKind(_formSertifikaTarihi.Value, DateTimeKind.Local).ToUniversalTime() : null,
-                GecerlilikTarihi = _formGecerlilikTarihi.HasValue ? DateTime.SpecifyKind(_formGecerlilikTarihi.Value, DateTimeKind.Local).ToUniversalTime() : null,
-                SertifikaBelgeNo = string.IsNullOrWhiteSpace(_formBelgeNo) ? null : _formBelgeNo,
                 Aciklama = string.IsNullOrWhiteSpace(_formAciklama) ? null : _formAciklama,
                 TamamlananKartSayisi = _duzenleYetkinlik?.TamamlananKartSayisi ?? 0
             };
@@ -1295,13 +1757,11 @@
     }
 
     // ── Yardımcılar ────────────────────────────────────────
-    string GetTooltipText(Personel p, ParcaSablonu prc, Models.Yetkinlik? y, int sv, bool suresiDolmus, bool suresiYaklasan)
+    string GetTooltipText(Personel p, ParcaSablonu prc, Models.Yetkinlik? y, int sv)
     {
         var text = $"{p.AdSoyad}\n{prc.ParcaAdi} · {SvAciklama(sv)}";
         if (y?.GuncellenmeTarihi > DateTime.MinValue)
             text += $"\nGüncelleme: {y.GuncellenmeTarihi.ToLocalTime():dd.MM.yyyy}";
-        if (y?.GecerlilikTarihi.HasValue == true)
-            text += $"\nGeçerlilik: {y.GecerlilikTarihi.Value.ToLocalTime():dd.MM.yyyy} {(suresiDolmus ? "(Süresi Dolmuş)" : suresiYaklasan ? "(<30 Gün)" : "")}";
         return text;
     }
 
@@ -1446,7 +1906,6 @@
                         ParcaPN = parca.ParcaPN,
                         YetkinlikSeviyesi = 1, // Helikopter tipi sürükleyince hepsi seviye 1 olarak gitsin
                         SertifikaTarihi = DateTime.UtcNow,
-                        GecerlilikTarihi = DateTime.UtcNow.AddYears(2),
                         SertifikaBelgeNo = nextCert,
                         Aciklama = $"{DraggedHeliType} toplu sürükleme ile eklendi.",
                         ParcaSablonu = parca
@@ -1489,7 +1948,6 @@
                     ParcaPN = DraggedParca.ParcaPN,
                     YetkinlikSeviyesi = _formSeviye,
                     SertifikaTarihi = DateTime.UtcNow,
-                    GecerlilikTarihi = DateTime.UtcNow.AddYears(2),
                     SertifikaBelgeNo = nextCert,
                     Aciklama = "Sürükle-Bırak ile otomatik eklendi.",
                     ParcaSablonu = DraggedParca
@@ -1529,18 +1987,6 @@
                 }
             </div>
             <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.35); margin-top:4px;">@SvAciklama(_formSeviye)</MudText>
-        </MudItem>
-        <MudItem xs="12" sm="6">
-            <MudDatePicker Label="Sertifika Tarihi" @bind-Date="_formSertifikaTarihi"
-                           Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd.MM.yyyy" />
-        </MudItem>
-        <MudItem xs="12" sm="6">
-            <MudDatePicker Label="Geçerlilik Tarihi" @bind-Date="_formGecerlilikTarihi"
-                           Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd.MM.yyyy"
-                           MinDate="DateTime.Today" />
-        </MudItem>
-        <MudItem xs="12">
-            <MudTextField @bind-Value="_formBelgeNo" Label="Belge No" Variant="Variant.Outlined" Margin="Margin.Dense" />
         </MudItem>
         <MudItem xs="12">
             <MudTextField @bind-Value="_formAciklama" Label="Açıklama" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />

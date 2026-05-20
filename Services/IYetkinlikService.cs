@@ -28,7 +28,18 @@ namespace MroPlan.Services
 
         // Gap-based AI Planning
         Task<List<GelisimYolHaritasi>> GeneratePlanForGapsAsync(List<YetkinlikAcigi> kritikAciklar, string userVoiceCommand = "");
-        Task<int> PersonelEgitimlerOnayla(List<(int PersonelId, int EgitimModuluId)> atamalar);
+        Task<int> PersonelEgitimlerOnayla(
+            List<(int PersonelId, int EgitimModuluId)> atamalar,
+            Dictionary<(int, int), DateTime>? tahminiTarihler = null);
+
+        // Modül yönetimi
+        Task<EgitimModulu> EnsureModulAsync(int parcaId, int hedefSv);
+
+        // Kapsama & Çizelge
+        Task<List<KapsamaAnalizi>> GetKapsamaAnaliziAsync();
+        Task<List<EgitimCizelgesiItem>> GetEgitimCizelgesiAsync();
+        Task<HashSet<(int PersonelId, int ParcaSablonuId)>> GetAktifEgitimParcalariAsync();
+        Task AtamaKaldirAsync(int personelId, int egitimModuluId);
     }
 
     public record EgitimOnerisi(
@@ -47,6 +58,37 @@ namespace MroPlan.Services
         bool Kritik
     );
 
+    public record KapsamaAnalizi(
+        string AtolyeAdi,
+        string ParcaAdi,
+        string ParcaPN,
+        string HeliTipi,
+        int ToplamPersonel,
+        int Sv1Sayisi,
+        int Sv2Sayisi,
+        int Sv3PlusSayisi,
+        int Sv4PlusSayisi,
+        bool PipelineVar,      // SV1 veya SV2'de en az 1 kişi var mı
+        string RiskSeviyesi    // "ACİL" | "KRİTİK" | "YÜKSEK" | "ORTA" | "İYİ" | "TAMAM"
+    );
+
+    public record EgitimCizelgesiItem(
+        int PersonelId,
+        string PersonelAd,
+        string AtolyeAdi,
+        string EgitimAdi,
+        string ParcaAdi,
+        int HedefSv,
+        int EgitimModuluId,
+        long BasMs,
+        long BitMs,
+        bool Tamamlandi,
+        int IlerlemeYuzdesi,
+        string Renk,
+        DateTime? TamamlanmaTarihi = null,
+        int MevcutSv = 0
+    );
+
     // SV eşik tablosu — sabit kural
     public static class SvEsikler
     {
@@ -62,5 +104,8 @@ namespace MroPlan.Services
 
         public static bool SvYukseltilebilir(int mevcutSv, int tamamlananKart) =>
             mevcutSv < 5 && tamamlananKart >= KumulatifEsik(mevcutSv) + SonrakiEsik(mevcutSv);
+
+        // Eğitim süresi: SV0→1 = 3 gün, diğerleri = 7 gün
+        public static int EgitimSuresiGun(int mevcutSv) => mevcutSv == 0 ? 3 : 7;
     }
 }

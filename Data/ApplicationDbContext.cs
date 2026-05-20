@@ -14,6 +14,7 @@ namespace MroPlan.Data
         public DbSet<BakimKontrolKaydi> BakimKontrolKayitlari { get; set; } = null!;
         public DbSet<EgitimModulu> EgitimModulleri { get; set; } = null!;
         public DbSet<PersonelEgitim> PersonelEgitimleri { get; set; } = null!;
+        public DbSet<YillikIsgucuTahmini> YillikIsgucuTahminleri => Set<YillikIsgucuTahmini>();
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -63,6 +64,11 @@ namespace MroPlan.Data
                 .WithMany()
                 .HasForeignKey(y => y.ParcaSablonuId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // BakimKontrolKaydi: aynı plan + parça kombinasyonu tekrar oluşturulamaz
+            modelBuilder.Entity<BakimKontrolKaydi>()
+                .HasIndex(k => new { k.BakimPlaniId, k.ParcaSablonuId })
+                .IsUnique();
 
             // Yetkinlik: (SicilNo, ParcaPN) çifti benzersiz
             modelBuilder.Entity<Yetkinlik>()

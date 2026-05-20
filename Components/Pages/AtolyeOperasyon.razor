@@ -5,11 +5,13 @@
 @using MroPlan.Services
 @using MroPlan.Data
 @using Microsoft.EntityFrameworkCore
+@implements IDisposable
 @inject IBakimService BakimService
 @inject IYetkinlikService YetkinlikService
 @inject ISnackbar Snackbar
 @inject ApplicationDbContext Context
 @inject ZamanYonetimServisi ZamanServisi
+@inject IYillikPlanlamaService OptimizasyonService
 
 
 <MudContainer MaxWidth="@MaxWidth.False" Class="mt-6 animate-fade-in">
@@ -34,12 +36,15 @@
                 .Select(x => x.AtananPersonelId!.Value)
                 .Distinct().Count();
             var atanmayanSayisi = pSayi - atananSayisi;
-            // Utilization: sadece DevamEdiyor işler (anlık kullanım oranı)
-            var utilizationDk = _tumIsler
-                .Where(x => x.ParcaSablonu?.BakimGrubuId == atolye.Id && x.Durum == nameof(BakimDurumu.DevamEdiyor))
-                .Sum(x => (x.ParcaSablonu?.IslemSure ?? 60) + (x.ParcaSablonu?.HazirlikSuresi ?? 15));
-            var kapasiteDk = pSayi > 0 ? pSayi * 480 * 0.85 : 480;
-            var dolulukOrani = (int)Math.Min(utilizationDk / kapasiteDk * 100, 100);
+            // Utilization: aktif + bekleyen toplam iş yükü / aylık kapasite
+            // 408 dk = 8s × 60 × 0.85 (ILP ve senaryo ile tutarlı)
+            // Kapasite: personel × 20 iş günü/ay × 408 dk/gün
+            var toplamIsYukuDk = _tumIsler
+                .Where(x => x.ParcaSablonu?.BakimGrubuId == atolye.Id
+                         && (x.Durum == nameof(BakimDurumu.DevamEdiyor) || x.Durum == nameof(BakimDurumu.Beklemede)))
+                .Sum(x => x.ParcaSablonu?.IslemSure ?? 60);
+            var aylikKapasiteDk = pSayi > 0 ? pSayi * 20 * 408 : 408;
+            var dolulukOrani = (int)Math.Min(toplamIsYukuDk / (double)aylikKapasiteDk * 100, 100);
             // Backlog: Beklemede olan iş sayısı
             var backlogSayi = _tumIsler.Count(x => x.ParcaSablonu?.BakimGrubuId == atolye.Id && x.Durum == nameof(BakimDurumu.Beklemede));
 
@@ -104,6 +109,24 @@
                     <MudIcon Icon="@Icons.Material.Filled.Dashboard" Color="Color.Primary" />
                     <MudText Typo="Typo.h5" Style="font-weight: 900;">İş Akış Panosu</MudText>
                     <div class="flex-1"></div>
+                    @if (_islerBekleyen.Any())
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Rounded.AutoAwesome"
+                                   OnClick="OptimalAtamaAcAsync"
+                                   Disabled="_optYukleniyor"
+                                   Style="font-weight:900; border-radius:12px;">
+                            @if (_optYukleniyor)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Hesaplanıyor...</span>
+                            }
+                            else
+                            {
+                                <span>OPTİMAL PERSONEL ATA</span>
+                            }
+                        </MudButton>
+                    }
                 </div>
 
                 <MudGrid Spacing="4">
@@ -127,11 +150,6 @@
                                         </div>
                                         <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.8); font-weight: 600;" Class="mb-1">@item.ParcaSablonu?.ParcaAdi</MudText>
                                         <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">P/N: @item.ParcaSablonu?.ParcaPN</MudText>
-                                        <div class="mt-4 pt-3 border-t d-flex justify-space-between align-center">
-                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                                       OnClick="@(() => PersonelSecimiAc(item))"
-                                                       StartIcon="@Icons.Material.Filled.PersonAdd" Style="font-size: 0.65rem; border-radius: 8px;">PERSONEL ATA</MudButton>
-                                        </div>
                                     </div>
                                 }
                             </div>
@@ -405,6 +423,20 @@
                     <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Filled">@_islerBekleyen.Count bekleyen iş</MudChip>
                 </div>
 
+                @{
+                    var atolye = _atolyeler.FirstOrDefault(a => a.Id == _seciliAtolyeId);
+                    var egitimdePersonel = _personeller
+                        .Where(p => p.AtolyeKodu == atolye?.AtolyeKodu && p.Durum == "Egitimde")
+                        .ToList();
+                }
+                @if (egitimdePersonel.Any())
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4" Style="border-radius:12px;">
+                        <strong>@egitimdePersonel.Count personel eğitimde</strong> — bu atölyede görev alamaz:
+                        @string.Join(", ", egitimdePersonel.Select(p => p.AdSoyad))
+                    </MudAlert>
+                }
+
                 <div class="ta-layout">
                     @* Sol: İş Tablosu *@
                     <div class="ta-sol">
@@ -414,7 +446,7 @@
                             {
                                 var currentItem = item;
                                 var aciliyet = AciliyetPuaniHesapla(currentItem);
-                                var uygunlar = UygunPersonelListesi(currentItem);
+                                var uygunlar = GetUygunlar(currentItem);
                                 var secilenId = _planAtamalari.GetValueOrDefault(currentItem.Id);
                                 var sure = currentItem.ParcaSablonu?.IslemSure ?? 60;
 
@@ -483,7 +515,7 @@
                             var toplam = mevcut + planlanan;
                             var doluluk = (int)Math.Min(toplam / NetVardiyaSuresi * 100, 100);
                             var atananIsler = _planAtamalari.Count(kv => kv.Value == p.Id);
-                            var yetkinlikler = _yetkinlikler.Where(y => y.SicilNo == p.SicilNo).ToList();
+                            var yetkinlikler = _yetkinliklerBySicil.GetValueOrDefault(p.SicilNo ?? "", new());
 
                             <div class="ta-personel-kart">
                                 <div class="d-flex align-center mb-2">
@@ -567,6 +599,246 @@
                 </div>
             </div>
         }
+    }
+
+    @* --- OPTİMAL ATAMA ÖNİZLEME PANELI (iki sütun: atama listesi + personel rotası) --- *@
+    @if (_optOnizlemeAcik && _optSonuc != null)
+    {
+        var personelGruplari = _optSonuc.AtamaDetaylari
+            .GroupBy(a => a.PersonelId)
+            .OrderBy(g => g.First().PersonelAdi)
+            .ToList();
+
+        <div class="py-backdrop" @onclick="() => _optOnizlemeAcik = false"></div>
+        <div class="py-panel-container" style="max-width:min(95vw,1380px);">
+            <div class="py-panel" style="max-height:88vh; overflow:hidden; display:flex; flex-direction:column; padding:28px 32px;">
+
+                @* ── Başlık ────────────────────────────────────────────── *@
+                <div class="d-flex align-center justify-space-between mb-4" style="flex-shrink:0;">
+                    <div>
+                        <MudText Typo="Typo.h5" Style="font-weight:900; color:#FACC15;">OPTİMAL PERSONEL ATAMA</MudText>
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">
+                            ILP modeli sonucu — %@_optSonuc.OptimallikSkoru optimallik · Z=@_optSonuc.HedefFonksiyonZ
+                        </MudText>
+                    </div>
+                    <MudIconButton Icon="@Icons.Material.Rounded.Close" Color="Color.Default"
+                                   OnClick="() => _optOnizlemeAcik = false" />
+                </div>
+
+                @* ── Özet KPI şeridi ──────────────────────────────────── *@
+                <div class="d-flex gap-3 mb-4" style="flex-shrink:0;">
+                    <div style="flex:1; padding:10px 12px; background:rgba(34,197,94,0.1); border-radius:10px; border:1px solid rgba(34,197,94,0.25); text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:900; color:#4ade80;">@_optSonuc.AtananGorev</div>
+                        <div style="font-size:0.65rem; color:rgba(255,255,255,0.4); font-weight:700;">ATANACAK</div>
+                    </div>
+                    <div style="flex:1; padding:10px 12px; background:rgba(239,68,68,0.1); border-radius:10px; border:1px solid rgba(239,68,68,0.25); text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:900; color:#f87171;">@_optSonuc.AtanamayaGorev</div>
+                        <div style="font-size:0.65rem; color:rgba(255,255,255,0.4); font-weight:700;">ATANAMAYAN</div>
+                    </div>
+                    <div style="flex:1; padding:10px 12px; background:rgba(250,204,21,0.1); border-radius:10px; border:1px solid rgba(250,204,21,0.25); text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:900; color:#FACC15;">@_optSonuc.AktifPersonelSayisi</div>
+                        <div style="font-size:0.65rem; color:rgba(255,255,255,0.4); font-weight:700;">AKTİF PERSONEL</div>
+                    </div>
+                    <div style="flex:1; padding:10px 12px; background:rgba(139,92,246,0.1); border-radius:10px; border:1px solid rgba(139,92,246,0.25); text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:900; color:#a78bfa;">@personelGruplari.Count</div>
+                        <div style="font-size:0.65rem; color:rgba(255,255,255,0.4); font-weight:700;">ATANAN PERSONEL</div>
+                    </div>
+                </div>
+
+                @* ── İki sütun gövde ─────────────────────────────────── *@
+                <div style="display:flex; gap:20px; flex:1; overflow:hidden; min-height:0;">
+
+                    @* SOL: Atama listesi *@
+                    <div style="flex:0 0 340px; overflow-y:auto; padding-right:4px;">
+                        @if (_optSonuc.AtamaDetaylari.Any())
+                        {
+                            <div style="font-size:0.65rem; color:rgba(255,255,255,0.35); font-weight:900; letter-spacing:1px; margin-bottom:8px;">
+                                ÖNERİLEN ATAMALAR
+                                <span style="color:rgba(255,255,255,0.2); font-weight:400; margin-left:4px;">— rotayı görmek için tıkla</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                @foreach (var atama in _optSonuc.AtamaDetaylari)
+                                {
+                                    bool secili = _rotaSeciliPersonelId == atama.PersonelId;
+                                    <div @onclick="() => _rotaSeciliPersonelId = (_rotaSeciliPersonelId == atama.PersonelId ? 0 : atama.PersonelId)"
+                                         style="@($"padding:10px 12px; border-radius:10px; cursor:pointer; transition:all 0.15s; border:1px solid {(secili ? "rgba(250,204,21,0.4)" : "rgba(34,197,94,0.12)")}; background:{(secili ? "rgba(250,204,21,0.07)" : "rgba(34,197,94,0.05)")};")">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudAvatar Size="Size.Small" Style="@($"background:{(secili ? "rgba(250,204,21,0.3)" : "rgba(250,204,21,0.15)")}; color:#FACC15; font-weight:900; font-size:0.6rem; flex-shrink:0; width:28px; height:28px;")">
+                                                @(atama.PersonelAdi.Length > 0 ? atama.PersonelAdi[0].ToString() : "?")
+                                            </MudAvatar>
+                                            <div style="flex:1; min-width:0;">
+                                                <div style="font-size:0.78rem; font-weight:700; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                                    @atama.PersonelAdi
+                                                    <span style="color:rgba(255,255,255,0.25); font-size:0.65rem; font-weight:400; margin-left:4px;">@atama.SicilNo</span>
+                                                </div>
+                                                <div style="font-size:0.68rem; color:rgba(255,255,255,0.45); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">@atama.ParcaAdi</div>
+                                            </div>
+                                            <div class="d-flex align-center gap-1" style="flex-shrink:0;">
+                                                <span style="font-size:0.65rem; padding:2px 6px; border-radius:6px; background:rgba(250,204,21,0.15); color:#FACC15; font-weight:900;">SV@(atama.AtananSv)</span>
+                                                <span style="font-size:0.65rem; color:rgba(255,255,255,0.25);">@atama.IslemSureDk dk</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @* Atanamayan görevler *@
+                        @if (_optSonuc.Atanamayalar.Any())
+                        {
+                            <div style="font-size:0.65rem; color:rgba(239,68,68,0.7); font-weight:900; letter-spacing:1px; margin:14px 0 8px;">ATANAMAYAN GÖREVLER</div>
+                            <div style="display:flex; flex-direction:column; gap:5px;">
+                                @foreach (var kayit in _optSonuc.Atanamayalar)
+                                {
+                                    <div style="padding:8px 12px; background:rgba(239,68,68,0.06); border-radius:8px; border:1px solid rgba(239,68,68,0.15);">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudIcon Icon="@Icons.Material.Rounded.ErrorOutline" Size="Size.Small" Style="color:#f87171; flex-shrink:0; font-size:0.9rem;" />
+                                            <div>
+                                                <span style="font-size:0.75rem; font-weight:700; color:white;">@kayit.ParcaAdi</span>
+                                                <span style="font-size:0.65rem; color:#f87171; margin-left:6px;">@kayit.Neden</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* SAĞ: Personel Rota Planı *@
+                    <div style="flex:1; overflow-y:auto; border-left:1px solid rgba(255,255,255,0.06); padding-left:20px; min-width:0;">
+                        <div style="font-size:0.65rem; color:rgba(255,255,255,0.35); font-weight:900; letter-spacing:1px; margin-bottom:12px;">PERSONEL ROTA PLANI</div>
+
+                        @if (!personelGruplari.Any())
+                        {
+                            <div style="text-align:center; padding:40px; color:rgba(255,255,255,0.2);">Atama bulunamadı</div>
+                        }
+                        else
+                        {
+                            <div style="display:flex; flex-direction:column; gap:14px;">
+                                @foreach (var grup in personelGruplari)
+                                {
+                                    var gorevler = grup
+                                        .OrderBy(g => g.RotaGrubu ?? "\uffff")  // null grup sona
+                                        .ThenBy(g => g.SiraNo)
+                                        .ThenByDescending(g => g.IslemSureDk)   // SiraNo=0 eski veri fallback
+                                        .ToList();
+                                    int toplamYuk = gorevler.Sum(g => g.IslemSureDk);
+                                    int kapasite = gorevler.First().Kapasite;
+                                    double doluluk = kapasite > 0 ? Math.Min(toplamYuk * 100.0 / kapasite, 100) : 0;
+                                    bool vurgulu = _rotaSeciliPersonelId == 0 || _rotaSeciliPersonelId == grup.Key;
+                                    string renk = doluluk >= 90 ? "#f87171" : doluluk >= 70 ? "#FACC15" : "#4ade80";
+
+                                    <div style="@($"border-radius:14px; border:1px solid {(vurgulu ? "rgba(250,204,21,0.25)" : "rgba(255,255,255,0.05)")}; background:{(vurgulu ? "rgba(15,20,30,0.95)" : "rgba(15,20,30,0.5)")}; padding:14px 16px; transition:all 0.2s; opacity:{(vurgulu ? "1" : "0.4")};")">
+
+                                        @* Personel başlık + yük barı *@
+                                        <div class="d-flex align-center justify-space-between mb-3">
+                                            <div class="d-flex align-center gap-2">
+                                                <MudAvatar Size="Size.Small" Style="background:rgba(250,204,21,0.2); color:#FACC15; font-weight:900; font-size:0.65rem; width:30px; height:30px;">
+                                                    @(gorevler.First().PersonelAdi[0].ToString())
+                                                </MudAvatar>
+                                                <div>
+                                                    <div style="font-size:0.8rem; font-weight:800; color:white;">@gorevler.First().PersonelAdi</div>
+                                                    <div style="font-size:0.62rem; color:rgba(255,255,255,0.35);">@gorevler.First().SicilNo · @gorevler.Count görev · @toplamYuk dk</div>
+                                                </div>
+                                            </div>
+                                            <div style="text-align:right;">
+                                                <div style="@($"font-size:0.8rem; font-weight:900; color:{renk}; line-height:1;")">%@doluluk.ToString("F0")</div>
+                                                <div style="font-size:0.6rem; color:rgba(255,255,255,0.3);">kapasite</div>
+                                            </div>
+                                        </div>
+
+                                        @* Kapasite progress *@
+                                        <div style="background:rgba(255,255,255,0.06); border-radius:4px; height:4px; margin-bottom:12px; overflow:hidden;">
+                                            <div style="@($"height:100%; width:{doluluk}%; background:{renk}; border-radius:4px; transition:width 0.4s;")"></div>
+                                        </div>
+
+                                        @* Görev rotası (zincir) — sıra: RotaGrubu → SiraNo → IslemSureDk *@
+                                        <div style="display:flex; flex-direction:column; gap:0;">
+                                            @{
+                                                string? _oncekiRotaGrubu = null;
+                                            }
+                                            @for (int i = 0; i < gorevler.Count; i++)
+                                            {
+                                                var g = gorevler[i];
+                                                bool sonGorev = i == gorevler.Count - 1;
+                                                double gorevOran = kapasite > 0 ? g.IslemSureDk * 100.0 / kapasite : 0;
+
+                                                @* RotaGrubu bölüm ayırıcı *@
+                                                @if (!string.IsNullOrEmpty(g.RotaGrubu) && g.RotaGrubu != _oncekiRotaGrubu)
+                                                {
+                                                    <div style="display:flex; align-items:center; gap:6px; margin:@(i == 0 ? "0" : "8px") 0 4px; padding-left:26px;">
+                                                        <div style="flex:1; height:1px; background:rgba(255,255,255,0.07);"></div>
+                                                        <span style="font-size:0.55rem; font-weight:900; color:rgba(255,255,255,0.3); letter-spacing:1.5px; text-transform:uppercase; padding:2px 7px; border-radius:4px; background:rgba(255,255,255,0.04);">@g.RotaGrubu</span>
+                                                        <div style="flex:1; height:1px; background:rgba(255,255,255,0.07);"></div>
+                                                    </div>
+                                                }
+                                                _oncekiRotaGrubu = g.RotaGrubu;
+
+                                                <div style="display:flex; align-items:stretch; gap:10px;">
+                                                    @* Zincir sol (dikey çizgi + nokta) *@
+                                                    <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0; width:16px;">
+                                                        <div style="@($"width:10px; height:10px; border-radius:50%; border:2px solid {renk}; background:{(i==0 ? renk : "transparent")}; flex-shrink:0; margin-top:2px;")"></div>
+                                                        @if (!sonGorev)
+                                                        {
+                                                            <div style="flex:1; width:2px; background:rgba(255,255,255,0.08); margin:3px 0;"></div>
+                                                        }
+                                                    </div>
+                                                    @* Görev kartı *@
+                                                    <div style="@($"flex:1; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); margin-bottom:{(sonGorev ? "0" : "6px")};")">
+                                                        <div class="d-flex align-center justify-space-between">
+                                                            <div style="flex:1; min-width:0;">
+                                                                <div style="font-size:0.75rem; font-weight:700; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                                                    <span style="color:rgba(255,255,255,0.3); font-size:0.6rem; margin-right:5px;">@(g.SiraNo > 0 ? g.SiraNo : i+1).</span>@g.ParcaAdi
+                                                                </div>
+                                                                <div style="font-size:0.62rem; color:rgba(255,255,255,0.35); margin-top:2px;">@g.HeliTipi</div>
+                                                            </div>
+                                                            <div class="d-flex align-center gap-2" style="flex-shrink:0; margin-left:8px;">
+                                                                <span style="font-size:0.62rem; padding:2px 6px; border-radius:5px; background:rgba(250,204,21,0.12); color:#FACC15; font-weight:800;">SV@(g.AtananSv)</span>
+                                                                <span style="font-size:0.62rem; color:rgba(255,255,255,0.3); min-width:42px; text-align:right;">@g.IslemSureDk dk</span>
+                                                            </div>
+                                                        </div>
+                                                        @* Görev süre bandı *@
+                                                        <div style="background:rgba(255,255,255,0.04); border-radius:3px; height:3px; margin-top:6px; overflow:hidden;">
+                                                            <div style="@($"height:100%; width:{gorevOran.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}%; background:{renk}; opacity:0.6; border-radius:3px;")"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @* ── Footer butonları ─────────────────────────────────── *@
+                <div class="d-flex gap-3 mt-4" style="flex-shrink:0; border-top:1px solid rgba(255,255,255,0.06); padding-top:16px;">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               OnClick="() => _optOnizlemeAcik = false" Style="font-weight:700;">
+                        İPTAL
+                    </MudButton>
+                    @if (_optSonuc.AtamaDetaylari.Any())
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Rounded.AssignmentTurnedIn"
+                                   OnClick="OptimalAtamaUygulaAsync"
+                                   Disabled="_optUyguluyor"
+                                   Style="font-weight:900; flex:1;">
+                            @if (_optUyguluyor)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Uygulanıyor...</span>
+                            }
+                            else
+                            {
+                                <span>TÜMÜNÜ UYGULA (@_optSonuc.AtananGorev ATAMA)</span>
+                            }
+                        </MudButton>
+                    }
+                </div>
+            </div>
+        </div>
     }
 
     @* --- PERSONEL SEÇİM PANELİ (tekil atama) --- *@
@@ -683,7 +955,7 @@
                             var izinde = p.IzinBaslangic.HasValue && p.IzinBitis.HasValue
                                 && bugun >= p.IzinBaslangic.Value.Date && bugun <= p.IzinBitis.Value.Date;
                             var parcaPN = _seciliKayit.ParcaSablonu?.ParcaPN ?? "";
-                            var tümYetkinlikler = _yetkinlikler.Where(y => y.SicilNo == p.SicilNo).ToList();
+                            var tümYetkinlikler = _yetkinliklerBySicil.GetValueOrDefault(p.SicilNo ?? "", new());
                             var gorevYetkinligi = tümYetkinlikler.FirstOrDefault(y => y.ParcaPN == parcaPN);
                             var mevcutKap = _kapasiteHaritasi.GetValueOrDefault(p.Id);
                             var aktifIs = GetPersonelAktifIsSayisi(p.Id);
@@ -847,76 +1119,149 @@
     @* --- TAMAMLAMA DİYALOGU --- *@
     @if (_tamamlaDialogAcik && _tamamlanacakKayit != null)
     {
-        var tahmin = _tamamlanacakKayit.ParcaSablonu?.IslemSure ?? 60;
-        var oran   = tahmin > 0 ? (double)_gercekSureDk / tahmin : 1.0;
-        var uyari  = oran > 2.5 || (oran < 0.3 && _gercekSureDk > 0);
+        var hazirlik   = _tamamlanacakKayit.ParcaSablonu?.HazirlikSuresi ?? 15;
+        var islemSure  = _tamamlanacakKayit.ParcaSablonu?.IslemSure ?? 60;
+        var toplamHedef = hazirlik + islemSure;
+        var progressPct = toplamHedef > 0 ? Math.Min((double)_netSureDk / toplamHedef * 100, 100) : 0;
+        var asimDk      = Math.Max(0, _netSureDk - toplamHedef);
 
-        <div class="py-backdrop" @onclick="@(() => _tamamlaDialogAcik = false)"></div>
+        <div class="py-backdrop"></div>
         <div class="py-panel-container">
-            <div class="py-panel" style="max-width: 460px;">
-                <div class="d-flex align-center justify-space-between mb-5">
+            <div class="py-panel" style="max-width: 480px;">
+
+                @* Başlık *@
+                <div class="d-flex align-center justify-space-between mb-4">
                     <div>
-                        <MudText Typo="Typo.h6" Style="font-weight: 900; color: #4ade80;">İş Tamamlandı</MudText>
-                        <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);">
+                        <MudText Typo="Typo.h6" Style="font-weight:900; color:#4ade80;">İş Tamamlandı</MudText>
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">
                             @_tamamlanacakKayit.ParcaSablonu?.ParcaAdi · @_tamamlanacakKayit.BakimPlani?.SeriNo
                         </MudText>
                     </div>
                     <MudIconButton Icon="@Icons.Material.Filled.Close"
-                                   OnClick="@(() => _tamamlaDialogAcik = false)"
-                                   Style="color: rgba(255,255,255,0.3);" />
+                                   OnClick="DialogKapat"
+                                   Style="color:rgba(255,255,255,0.3);" />
                 </div>
 
                 @* Bilgi satırları *@
-                <div style="background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="background:rgba(255,255,255,0.03); border-radius:14px; padding:14px 18px; margin-bottom:16px; display:flex; flex-direction:column; gap:8px;">
                     <div class="d-flex justify-space-between">
-                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">Tahmini süre</MudText>
-                        <MudText Typo="Typo.body2" Style="font-weight: 700;">@tahmin dk</MudText>
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">Hazırlık + İşlem</MudText>
+                        <MudText Typo="Typo.caption" Style="font-weight:700;">@hazirlik + @islemSure = <span style="color:#facc15;">@toplamHedef dk</span></MudText>
                     </div>
                     <div class="d-flex justify-space-between">
-                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">Başlangıç</MudText>
-                        <MudText Typo="Typo.body2" Style="font-weight: 700;">
-                            @_tamamlanacakKayit.IslemTarihi.ToLocalTime().ToString("dd.MM HH:mm")
-                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">Başlangıç</MudText>
+                        <MudText Typo="Typo.caption" Style="font-weight:700;">@_tamamlanacakKayit.IslemTarihi.ToLocalTime().ToString("dd.MM HH:mm")</MudText>
                     </div>
                     <div class="d-flex justify-space-between">
-                        <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.4);">Atanan personel</MudText>
-                        <MudText Typo="Typo.body2" Style="font-weight: 700;">
-                            @(_tamamlanacakKayit.AtananPersonel?.AdSoyad ?? "—")
-                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color:rgba(255,255,255,0.4);">Atanan personel</MudText>
+                        <MudText Typo="Typo.caption" Style="font-weight:700;">@(_tamamlanacakKayit.AtananPersonel?.AdSoyad ?? "—")</MudText>
                     </div>
                 </div>
 
-                @* Gerçek süre girişi *@
-                <MudNumericField T="int" @bind-Value="_gercekSureDk"
-                                 Label="Gerçek Süre (dakika)"
-                                 Variant="Variant.Outlined"
-                                 Min="1" Max="1440"
-                                 FullWidth="true"
-                                 Class="mb-3"
-                                 AdornmentIcon="@Icons.Material.Filled.Timer"
-                                 Adornment="Adornment.Start" />
-
-                @* Uyarı *@
-                @if (uyari)
+                @* Mola bandı *@
+                @if (_molada)
                 {
-                    <div style="background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;">
-                        <MudText Typo="Typo.caption" Style="color: #facc15;">
-                            ⚠ Girilen süre (@_gercekSureDk dk) tahminden çok @(oran > 2.5 ? "fazla" : "az"). Doğru mu?
-                        </MudText>
+                    <div style="background:rgba(250,204,21,0.1); border:1px solid rgba(250,204,21,0.3); border-radius:10px; padding:10px 14px; margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:1.1rem;">🟡</span>
+                        <div>
+                            <div style="font-weight:800; font-size:0.82rem; color:#facc15;">@_molaAdi — SAYAÇ DURAKLATILDI</div>
+                            <div style="font-size:0.7rem; color:rgba(255,255,255,0.4);">@_molaKalanDk dk sonra devam edecek</div>
+                        </div>
                     </div>
                 }
 
-                <div class="d-flex gap-3 justify-end mt-2">
-                    <MudButton Variant="Variant.Outlined"
-                               OnClick="@(() => _tamamlaDialogAcik = false)"
-                               Style="border-radius: 10px;">İptal</MudButton>
-                    <MudButton Variant="Variant.Filled" Color="Color.Success"
-                               StartIcon="@Icons.Material.Filled.CheckCircle"
-                               OnClick="IsBitirOnayla"
-                               Style="border-radius: 10px; font-weight: 800;">
-                        Tamamla ve Kaydet
-                    </MudButton>
-                </div>
+                @* Otomatik tamamlama countdown *@
+                @if (_countdownAktif)
+                {
+                    <div style="background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.3); border-radius:14px; padding:18px; margin-bottom:12px; text-align:center;">
+                        <div style="font-size:0.85rem; font-weight:700; color:#4ade80; margin-bottom:8px;">✅ Görev süresi doldu!</div>
+                        <div style="font-size:0.75rem; color:rgba(255,255,255,0.5); margin-bottom:12px;">@_countdownSaniye saniye içinde otomatik kaydediliyor...</div>
+                        <div style="background:rgba(255,255,255,0.06); border-radius:6px; height:6px; overflow:hidden; margin-bottom:14px;">
+                            <div style="height:100%; border-radius:6px; background:#4ade80; width:@((_countdownSaniye * 10).ToString())%; transition:width 0.9s linear;"></div>
+                        </div>
+                        <div class="d-flex gap-2 justify-center">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                                       OnClick="DevamEt"
+                                       Style="border-radius:10px; font-weight:800; font-size:0.78rem;">
+                                ⏱ DEVAM ET — Gecikme var
+                            </MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                       OnClick="IsBitirOnayla"
+                                       Style="border-radius:10px; font-weight:800; font-size:0.78rem;">
+                                HEMEN TAMAMLA
+                            </MudButton>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    @* FAZ banner *@
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 14px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between;">
+                        <span style="font-size:0.78rem; font-weight:800; color:@_fazRenk;">
+                            @(_fazAdi == "SETUP" ? "🔧" : _fazAdi == "İŞLEM" ? "⚙️" : "⚠️") FAZ: @_fazAdi
+                        </span>
+                        @if (_mesaiFazinda && asimDk > 0)
+                        {
+                            <span style="font-size:0.72rem; color:#f97316; font-weight:700;">+@asimDk dk aşım</span>
+                        }
+                    </div>
+
+                    @* Progress bar *@
+                    <div style="background:rgba(255,255,255,0.06); border-radius:6px; height:8px; overflow:hidden; margin-bottom:6px; position:relative;">
+                        <div style="height:100%; border-radius:6px; background:@_fazRenk; width:@(progressPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%; transition:width 0.8s ease; float:left;"></div>
+                        @if (_mesaiFazinda && asimDk > 0)
+                        {
+                            var asimPct = Math.Min((double)asimDk / toplamHedef * 100, 20);
+                            <div style="height:100%; border-radius:6px; background:#f97316; width:@(asimPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%; float:left;"></div>
+                        }
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:16px;">
+                        <span style="font-size:0.65rem; color:rgba(255,255,255,0.3);">0</span>
+                        <span style="font-size:0.65rem; color:rgba(255,255,255,0.3);">@toplamHedef dk</span>
+                    </div>
+
+                    @* Büyük sayaç *@
+                    <div style="text-align:center; padding:16px 0 20px;">
+                        <div style="font-size:3rem; font-weight:900; color:@_fazRenk; line-height:1; font-variant-numeric:tabular-nums;">
+                            @_netSureDk <span style="font-size:1.2rem; opacity:0.6;">DK</span>
+                        </div>
+                        <div style="font-size:0.7rem; color:rgba(255,255,255,0.3); margin-top:4px; font-weight:600; letter-spacing:0.05em;">
+                            @(_molada ? "MOLA — DURAKLATILDI" : "NET ÇALIŞMA SÜRESİ")
+                        </div>
+                    </div>
+
+                    @* Manuel giriş toggle *@
+                    <div style="margin-bottom:16px;">
+                        <MudButton Variant="Variant.Text" Color="Color.Default"
+                                   OnClick="@(() => _manuelGiris = !_manuelGiris)"
+                                   Style="font-size:0.72rem; color:rgba(255,255,255,0.3); padding:4px 8px;">
+                            @(_manuelGiris ? "▲ Sayacı kullan" : "▼ Süreyi manuel gir")
+                        </MudButton>
+                        @if (_manuelGiris)
+                        {
+                            <MudNumericField T="int" @bind-Value="_gercekSureDk"
+                                             Label="Gerçek Süre (dakika)"
+                                             Variant="Variant.Outlined"
+                                             Min="1" Max="1440"
+                                             FullWidth="true"
+                                             Class="mt-2"
+                                             AdornmentIcon="@Icons.Material.Filled.Timer"
+                                             Adornment="Adornment.Start" />
+                        }
+                    </div>
+
+                    @* Footer butonlar *@
+                    <div class="d-flex gap-3 justify-end">
+                        <MudButton Variant="Variant.Outlined" OnClick="DialogKapat"
+                                   Style="border-radius:10px;">İptal</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.CheckCircle"
+                                   OnClick="IsBitirOnayla"
+                                   Style="border-radius:10px; font-weight:800;">
+                            Tamamla ve Kaydet
+                        </MudButton>
+                    </div>
+                }
             </div>
         </div>
     }
@@ -1225,6 +1570,13 @@
     private List<BakimKontrolKaydi> _tumIsler = new();
     private List<Personel> _personeller = new();
     private List<Yetkinlik> _yetkinlikler = new();
+
+    // Perf: O(1) lookup yerine O(27K) tarama yapılmasın
+    private Dictionary<(string SicilNo, string ParcaPN), Yetkinlik> _yetkinlikLookup = new();
+    private Dictionary<string, List<Yetkinlik>> _yetkinliklerBySicil = new();
+    private Dictionary<int, int> _aktifIsSayisiCache = new();
+    private Dictionary<int, List<PersonelPuani>> _uygunlarCache = new();
+
     private int _seciliAtolyeId;
 
     // Tekil atama
@@ -1247,10 +1599,37 @@
     private Dictionary<int, double> _planKapasitesi = new();
 
 
+    // Optimal atama
+    private bool _optOnizlemeAcik;
+    private bool _optYukleniyor;
+    private bool _optUyguluyor;
+    private OptimizasyonSonuc? _optSonuc;
+    private int _rotaSeciliPersonelId = 0; // rota panelinde vurgulanan personel
+
     // İş tamamlama dialog
     private bool _tamamlaDialogAcik;
     private BakimKontrolKaydi? _tamamlanacakKayit;
     private int _gercekSureDk;
+    private bool _manuelGiris;
+
+    // Akıllı sayaç
+    private static readonly (TimeOnly Bas, TimeOnly Bit, string Ad)[] MolaTakvimi =
+    [
+        (new TimeOnly(10, 0),  new TimeOnly(10, 15), "Sabah Molası"),
+        (new TimeOnly(12, 0),  new TimeOnly(13, 0),  "Öğle Molası"),
+        (new TimeOnly(15, 0),  new TimeOnly(15, 15), "İkindi Molası"),
+    ];
+
+    private CancellationTokenSource? _timerCts;
+    private int    _netSureDk;
+    private string _fazAdi       = "SETUP";
+    private string _fazRenk      = "#facc15";
+    private bool   _molada;
+    private string _molaAdi      = "";
+    private int    _molaKalanDk;
+    private bool   _countdownAktif;
+    private int    _countdownSaniye;
+    private bool   _mesaiFazinda;
 
     private record PersonelPuani(Personel Personel, int UyumPuani, bool UygunMu, string? AtanamaSebebi, int YetkinlikSeviyesi);
 
@@ -1265,25 +1644,67 @@
     private List<BakimKontrolKaydi> _islerBiten => _filtrelenmisIsler
         .Where(x => x.Durum.Equals(nameof(BakimDurumu.Tamamlandi), StringComparison.OrdinalIgnoreCase)).ToList();
 
-    protected override async Task OnInitializedAsync() => await VerileriYukle();
+    [SupplyParameterFromQuery(Name = "planId")]
+    public int QueryPlanId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VerileriYukle();
+
+        if (QueryPlanId > 0)
+        {
+            var grupId = _tumIsler
+                .FirstOrDefault(x => x.BakimPlaniId == QueryPlanId)
+                ?.ParcaSablonu?.BakimGrubuId;
+
+            if (grupId.HasValue && grupId > 0)
+                _seciliAtolyeId = grupId.Value;
+        }
+    }
 
     private async Task VerileriYukle()
     {
-        _atolyeler = await Context.BakimGruplari.ToListAsync();
+        _atolyeler    = await Context.BakimGruplari.ToListAsync();
+        _personeller  = await Context.Personeller.ToListAsync();
+        _yetkinlikler = await Context.Yetkinlikler.ToListAsync();
+
+        // Perf: O(1) yetkinlik lookup için dictionary'leri kur
+        _yetkinlikLookup = _yetkinlikler
+            .Where(y => !string.IsNullOrEmpty(y.SicilNo) && !string.IsNullOrEmpty(y.ParcaPN))
+            .GroupBy(y => (y.SicilNo!, y.ParcaPN!))
+            .ToDictionary(g => g.Key, g => g.First());
+        _yetkinliklerBySicil = _yetkinlikler
+            .Where(y => !string.IsNullOrEmpty(y.SicilNo))
+            .GroupBy(y => y.SicilNo!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        await IslerYukle();
+    }
+
+    // Atama işlemleri sonrası sadece iş listesini yenile — yetkinlik/personel değişmez
+    private async Task IslerYukle()
+    {
         _tumIsler = await Context.BakimKontrolKayitlari
             .Include(x => x.BakimPlani)
-            .Include(x => x.ParcaSablonu)
-                .ThenInclude(p => p!.BakimGrubu)
+            .Include(x => x.ParcaSablonu).ThenInclude(p => p!.BakimGrubu)
             .Include(x => x.AtananPersonel)
             .Include(x => x.SupervisorPersonel)
+            .AsNoTracking()
             .ToListAsync();
-        _personeller = await Context.Personeller.ToListAsync();
-        _yetkinlikler = await Context.Yetkinlikler.ToListAsync();
 
         _kapasiteHaritasi = _tumIsler
             .Where(x => x.Durum == nameof(BakimDurumu.DevamEdiyor) && x.AtananPersonelId.HasValue)
             .GroupBy(x => x.AtananPersonelId!.Value)
             .ToDictionary(g => g.Key, g => g.Sum(x => (x.ParcaSablonu?.IslemSure ?? 60) / 60.0));
+
+        // Perf: aktif iş sayısı O(1) lookup için
+        _aktifIsSayisiCache = _tumIsler
+            .Where(x => x.Durum == nameof(BakimDurumu.DevamEdiyor) && x.AtananPersonelId.HasValue)
+            .GroupBy(x => x.AtananPersonelId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        // Toplu atama cache'ini temizle — iş listesi değişti
+        _uygunlarCache.Clear();
     }
 
     // --- Atölye kart yardımcıları ---
@@ -1295,7 +1716,7 @@
         _tumIsler.Count(x => x.ParcaSablonu?.BakimGrubuId == atolyeId && x.Durum != nameof(BakimDurumu.Tamamlandi));
 
     private int GetPersonelAktifIsSayisi(int personelId) =>
-        _tumIsler.Count(x => x.AtananPersonelId == personelId && x.Durum == nameof(BakimDurumu.DevamEdiyor));
+        _aktifIsSayisiCache.GetValueOrDefault(personelId, 0);
 
     private string GetIsYukuRengi(int aktifIs) => aktifIs switch { 0 => "#4ade80", 1 => "#facc15", _ => "#ef4444" };
 
@@ -1331,8 +1752,8 @@
         _vardiyaModu = false;
         _planAtamalari.Clear();
         _planKapasitesi.Clear();
-
         _vardiyaAtamalari.Clear();
+        _uygunlarCache.Clear();
     }
 
     // --- Vardiya Planı ---
@@ -1441,7 +1862,7 @@
         }
 
         VardiyaModundanCik();
-        await VerileriYukle();
+        await IslerYukle();
     }
 
     private string AciliyetRenkKod(int puan) => puan >= 70 ? "#ef4444" : puan >= 40 ? "#facc15" : "#60a5fa";
@@ -1460,12 +1881,74 @@
             .ToList();
     }
 
+    // ── Optimal Atama ──────────────────────────────────────────────────────────
+
+    private async Task OptimalAtamaAcAsync()
+    {
+        _optYukleniyor = true;
+        StateHasChanged();
+
+        // Seçili atölye kodu — sadece bu atölyenin personeli ve görevleri kullanılır
+        var atolye = _atolyeler.FirstOrDefault(a => a.Id == _seciliAtolyeId);
+
+        _optSonuc = await OptimizasyonService.PersonelAtamaOptimizeEtAsync(0, atolye?.AtolyeKodu);
+
+        _optYukleniyor = false;
+        _optOnizlemeAcik = true;
+    }
+
+    private async Task OptimalAtamaUygulaAsync()
+    {
+        if (_optSonuc == null || !_optSonuc.AtamaDetaylari.Any()) return;
+
+        _optUyguluyor = true;
+        StateHasChanged();
+
+        int sayac = 0;
+        try
+        {
+            var hedefIdler = _optSonuc.AtamaDetaylari
+                .Select(a => a.BakimKontrolKaydiId)
+                .ToHashSet();
+
+            // AsNoTracking yerine tracked kayıtları fresh çek — Attach çakışmasını önler
+            var kayitlar = await Context.BakimKontrolKayitlari
+                .Where(k => hedefIdler.Contains(k.Id))
+                .ToListAsync();
+
+            foreach (var atama in _optSonuc.AtamaDetaylari)
+            {
+                var kayit = kayitlar.FirstOrDefault(k => k.Id == atama.BakimKontrolKaydiId);
+                if (kayit == null) continue;
+
+                kayit.AtananPersonelId = atama.PersonelId;
+                kayit.Durum            = nameof(BakimDurumu.DevamEdiyor);
+                kayit.IslemTarihi      = DateTime.UtcNow;
+                sayac++;
+            }
+
+            await Context.SaveChangesAsync();
+            _optOnizlemeAcik = false;
+            _optSonuc = null;
+            Snackbar.Add($"Optimal atama tamamlandı — {sayac} iş atandı.", Severity.Success);
+            await IslerYukle();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Atama hatası: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _optUyguluyor = false;
+        }
+    }
+
     private void PersonelSecimiAc(BakimKontrolKaydi item)
     {
         _seciliKayit = item;
         _personelArama = string.Empty;
         _seciliOnIzlemePersonelId = 0;
-        _tekAtamaPuanlari = _seciliKayit != null ? UygunPersonelListesi(_seciliKayit) : new();
+        _tekAtamaPuanlari = _seciliKayit != null ? GetUygunlar(_seciliKayit) : new();
         _secimAcik = true;
     }
 
@@ -1482,15 +1965,15 @@
         var p = SecilenPuani.Personel;
         try
         {
-            var entry = Context.Entry(_seciliKayit);
-            if (entry.State == EntityState.Detached) Context.Attach(_seciliKayit);
-            _seciliKayit.AtananPersonelId = p.Id;
-            _seciliKayit.Durum = nameof(BakimDurumu.DevamEdiyor);
-            _seciliKayit.IslemTarihi = DateTime.UtcNow;
+            var kayit = await Context.BakimKontrolKayitlari.FindAsync(_seciliKayit.Id);
+            if (kayit == null) return;
+            kayit.AtananPersonelId = p.Id;
+            kayit.Durum            = nameof(BakimDurumu.DevamEdiyor);
+            kayit.IslemTarihi      = DateTime.UtcNow;
             await Context.SaveChangesAsync();
             Snackbar.Add($"{p.AdSoyad} göreve atandı.", Severity.Success);
             PersonelSecimiKapat();
-            await VerileriYukle();
+            await IslerYukle();
         }
         catch (Exception ex) { Snackbar.Add("Atama hatası: " + ex.Message, Severity.Error); }
     }
@@ -1498,40 +1981,181 @@
     private void IsBitir(BakimKontrolKaydi item)
     {
         _tamamlanacakKayit = item;
-        var gecenDk = (int)(DateTime.UtcNow - item.IslemTarihi).TotalMinutes;
-        // Makul aralık: 1 dk – 1440 dk (24 saat). Dışındaysa tahmini süreyi kullan.
-        _gercekSureDk = gecenDk >= 1 && gecenDk <= 1440
-            ? gecenDk
-            : item.ParcaSablonu?.IslemSure ?? 60;
+        _manuelGiris       = false;
+        _countdownAktif    = false;
+        _mesaiFazinda      = false;
+        _molada            = false;
+        _netSureDk         = 0;
+        _gercekSureDk      = item.ParcaSablonu?.IslemSure ?? 60;
         _tamamlaDialogAcik = true;
+        BaslatTimer();
     }
+
+    private void DialogKapat()
+    {
+        DurdurTimer();
+        _tamamlaDialogAcik = false;
+        _countdownAktif    = false;
+        _mesaiFazinda      = false;
+    }
+
+    private void DevamEt()
+    {
+        _countdownAktif = false;
+        _mesaiFazinda   = true;
+        _fazAdi  = "MESAİ";
+        _fazRenk = "#f97316";
+    }
+
+    // ── Timer ──────────────────────────────────────────────────────────────────
+
+    private void BaslatTimer()
+    {
+        DurdurTimer();
+        _timerCts = new CancellationTokenSource();
+        _ = TimerDongusuAsync(_timerCts.Token);
+    }
+
+    private void DurdurTimer()
+    {
+        _timerCts?.Cancel();
+        _timerCts?.Dispose();
+        _timerCts = null;
+    }
+
+    private async Task TimerDongusuAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var simdi     = DateTime.Now;
+                var baslangic = (_tamamlanacakKayit?.IslemTarihi ?? simdi).ToLocalTime();
+                var hazirlik  = _tamamlanacakKayit?.ParcaSablonu?.HazirlikSuresi ?? 15;
+                var islemSure = _tamamlanacakKayit?.ParcaSablonu?.IslemSure ?? 60;
+                var toplamHedef = hazirlik + islemSure;
+
+                // Mola kontrolü
+                var simdikSaat = TimeOnly.FromDateTime(simdi);
+                _molada = false; _molaAdi = ""; _molaKalanDk = 0;
+                foreach (var (bas, bit, ad) in MolaTakvimi)
+                {
+                    if (simdikSaat >= bas && simdikSaat < bit)
+                    {
+                        _molada      = true;
+                        _molaAdi     = ad;
+                        _molaKalanDk = (int)(bit.ToTimeSpan() - simdikSaat.ToTimeSpan()).TotalMinutes + 1;
+                        break;
+                    }
+                }
+
+                // Net süre: geçen toplam - tamamlanmış molalar
+                var toplamGecenDk = (simdi - baslangic).TotalMinutes;
+                var toplamMolaDk  = HesaplaMolaDakikasi(baslangic, simdi);
+                // Şu an moladaysa aktif molayı da düş
+                if (_molada)
+                {
+                    foreach (var (bas, bit, _) in MolaTakvimi)
+                    {
+                        var molaBasSimdi = simdi.Date + bas.ToTimeSpan();
+                        if (simdi >= molaBasSimdi && TimeOnly.FromDateTime(simdi) < bit)
+                        {
+                            toplamMolaDk += (simdi - molaBasSimdi).TotalMinutes;
+                            break;
+                        }
+                    }
+                }
+
+                _netSureDk = Math.Max(0, (int)(toplamGecenDk - toplamMolaDk));
+                if (!_manuelGiris) _gercekSureDk = _netSureDk;
+
+                // Faz güncelle
+                if (!_mesaiFazinda)
+                {
+                    if (_netSureDk < hazirlik)        { _fazAdi = "SETUP";  _fazRenk = "#facc15"; }
+                    else if (_netSureDk < toplamHedef) { _fazAdi = "İŞLEM"; _fazRenk = "#3b82f6"; }
+                    else if (!_countdownAktif)
+                    {
+                        _countdownAktif  = true;
+                        _countdownSaniye = 10;
+                        _ = CountdownAsync(ct);
+                    }
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task CountdownAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (_countdownSaniye > 0 && _countdownAktif && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(1000, ct);
+                _countdownSaniye--;
+                await InvokeAsync(StateHasChanged);
+            }
+            if (_countdownAktif && !ct.IsCancellationRequested)
+                await InvokeAsync(IsBitirOnayla);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    // Başlangıç–şimdi arasındaki tamamen geçmiş mola dakikalarını hesapla
+    private static double HesaplaMolaDakikasi(DateTime baslangic, DateTime simdi)
+    {
+        double toplam = 0;
+        foreach (var (bas, bit, _) in MolaTakvimi)
+        {
+            foreach (var gun in new[] { simdi.Date, simdi.Date.AddDays(-1) })
+            {
+                var mBas = gun + bas.ToTimeSpan();
+                var mBit = gun + bit.ToTimeSpan();
+                if (mBit <= baslangic || mBas >= simdi) continue;
+                var kBas = mBas < baslangic ? baslangic : mBas;
+                var kBit = mBit > simdi     ? simdi     : mBit;
+                if (kBit > kBas) toplam += (kBit - kBas).TotalMinutes;
+            }
+        }
+        return toplam;
+    }
+
+    public void Dispose() => DurdurTimer();
 
     private async Task IsBitirOnayla()
     {
         if (_tamamlanacakKayit == null) return;
         var item = _tamamlanacakKayit;
+        DurdurTimer();
         _tamamlaDialogAcik = false;
+        _countdownAktif    = false;
 
         try
         {
-            item.Durum            = nameof(BakimDurumu.Tamamlandi);
-            item.TamamlanmaTarihi = DateTime.UtcNow;
-            item.GercekSureDk     = _gercekSureDk > 0 ? _gercekSureDk : null;
+            var kayit = await Context.BakimKontrolKayitlari.FindAsync(item.Id);
+            if (kayit == null) return;
+            kayit.Durum            = nameof(BakimDurumu.Tamamlandi);
+            kayit.TamamlanmaTarihi = DateTime.UtcNow;
+            kayit.GercekSureDk     = _gercekSureDk > 0 ? _gercekSureDk : null;
             await Context.SaveChangesAsync();
 
             // SV yetkinlik güncelleme
-            var personelId = item.AtananPersonelId ?? item.GelistirmePersonelId;
-            if (personelId.HasValue && item.ParcaSablonuId > 0)
-                await YetkinlikService.KartTamamlandiAsync(personelId.Value, item.ParcaSablonuId, item.Id);
+            var personelId = kayit.AtananPersonelId ?? item.GelistirmePersonelId;
+            if (personelId.HasValue && kayit.ParcaSablonuId > 0)
+                await YetkinlikService.KartTamamlandiAsync(personelId.Value, kayit.ParcaSablonuId, kayit.Id);
 
             // Plan otomatik tamamlanma kontrolü
             var tumIsler = await Context.BakimKontrolKayitlari
-                .Where(k => k.BakimPlaniId == item.BakimPlaniId)
+                .Where(k => k.BakimPlaniId == kayit.BakimPlaniId)
                 .ToListAsync();
 
             if (tumIsler.Any() && tumIsler.All(k => k.Durum == nameof(BakimDurumu.Tamamlandi)))
             {
-                var plan = await Context.BakimPlanlari.FindAsync(item.BakimPlaniId);
+                var plan = await Context.BakimPlanlari.FindAsync(kayit.BakimPlaniId);
                 if (plan != null)
                 {
                     plan.GenelDurum  = nameof(BakimDurumu.Tamamlandi);
@@ -1545,7 +2169,7 @@
                 Snackbar.Add($"İşlem tamamlandı. Gerçek süre: {_gercekSureDk} dk kaydedildi.", Severity.Success);
             }
 
-            await VerileriYukle();
+            await IslerYukle();
         }
         catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
     }
@@ -1554,12 +2178,14 @@
     {
         try
         {
-            item.AtananPersonelId = null;
-            item.Durum = nameof(BakimDurumu.Beklemede);
-            item.IslemTarihi = DateTime.UtcNow;
+            var kayit = await Context.BakimKontrolKayitlari.FindAsync(item.Id);
+            if (kayit == null) return;
+            kayit.AtananPersonelId = null;
+            kayit.Durum            = nameof(BakimDurumu.Beklemede);
+            kayit.IslemTarihi      = DateTime.UtcNow;
             await Context.SaveChangesAsync();
             Snackbar.Add("Personel ataması kaldırıldı.", Severity.Warning);
-            await VerileriYukle();
+            await IslerYukle();
         }
         catch (Exception ex) { Snackbar.Add("Hata: " + ex.Message, Severity.Error); }
     }
@@ -1607,6 +2233,14 @@
         return Math.Min(puan, 110);
     }
 
+    // Perf: sonuçları cache'le — aynı iş için render döngüsünde tekrar hesaplanmasın
+    private List<PersonelPuani> GetUygunlar(BakimKontrolKaydi is_)
+    {
+        if (!_uygunlarCache.TryGetValue(is_.Id, out var sonuc))
+            _uygunlarCache[is_.Id] = sonuc = UygunPersonelListesi(is_);
+        return sonuc;
+    }
+
     private List<PersonelPuani> UygunPersonelListesi(BakimKontrolKaydi is_)
     {
         var parcaPN = is_.ParcaSablonu?.ParcaPN ?? "";
@@ -1619,7 +2253,17 @@
         return _personeller.Select(p =>
         {
             if (p.Durum != "Aktif")
-                return new PersonelPuani(p, 0, false, "Aktif değil", 0);
+            {
+                var sebep = p.Durum switch
+                {
+                    "Egitimde"  => "Eğitimde",
+                    "Izinli"    => "İzinli",
+                    "Gorevli"   => "Görevde",
+                    "Ayrildi"   => "Ayrıldı",
+                    _           => "Aktif değil"
+                };
+                return new PersonelPuani(p, 0, false, sebep, 0);
+            }
 
             if (p.IzinBaslangic.HasValue && p.IzinBitis.HasValue
                 && bugun >= p.IzinBaslangic.Value.Date && bugun <= p.IzinBitis.Value.Date)
@@ -1629,7 +2273,8 @@
                 && !p.AtolyeKodu.Trim().Equals(atolyeKodu.Trim(), StringComparison.OrdinalIgnoreCase))
                 return new PersonelPuani(p, 0, false, "Farklı atölye", 0);
 
-            var yetkinlik = _yetkinlikler.FirstOrDefault(y => y.SicilNo == p.SicilNo && y.ParcaPN == parcaPN);
+            var key = (p.SicilNo ?? "", parcaPN);
+            _yetkinlikLookup.TryGetValue(key, out var yetkinlik);
             if (yetkinlik == null)
                 return new PersonelPuani(p, 0, false, "Sertifika yok", 0);
 
@@ -1678,22 +2323,46 @@
         _planKapasitesi.Clear();
         _planAtamalari = _islerBekleyen.ToDictionary(x => x.Id, _ => (int?)null);
 
+        // ILP ile tutarlı sıralama: en kısıtlı görev önce (min SV gereksinimi DESC, süre DESC)
+        var siraliIsler = _islerBekleyen
+            .OrderByDescending(x => MinYetkinlikSeviyesi(x.ParcaSablonu?.IslemTuru))
+            .ThenByDescending(x => x.ParcaSablonu?.IslemSure ?? 60)
+            .ToList();
 
-        foreach (var is_ in _islerBekleyen.OrderByDescending(x => AciliyetPuaniHesapla(x)))
+        foreach (var is_ in siraliIsler)
         {
-            var uygunlar = UygunPersonelListesi(is_).Where(x => x.UygunMu).ToList();
+            var islemSureSaat = (is_.ParcaSablonu?.IslemSure ?? 60) / 60.0;
+            var minSeviye = MinYetkinlikSeviyesi(is_.ParcaSablonu?.IslemTuru);
+
+            // K2 + K3: yetkin ve kapasitesi yeten adaylar
+            var uygunlar = GetUygunlar(is_).Where(x => x.UygunMu).ToList();
             if (!uygunlar.Any()) continue;
 
-            var toplamSure = ((is_.ParcaSablonu?.IslemSure ?? 60) + (is_.ParcaSablonu?.HazirlikSuresi ?? 15)) / 60.0;
-            var enIyi = uygunlar.FirstOrDefault(x =>
-                (_planKapasitesi.GetValueOrDefault(x.Personel.Id) + toplamSure) <= NetVardiyaSuresi);
-            if (enIyi is null) continue;  // Hiçbir personele sığmıyor, pas geç
+            // ILP sıralama: 1. en düşük planlı yük (adil dağılım), 2. en az SV fazlası (israf önle)
+            var enIyi = uygunlar
+                .Where(x => (_planKapasitesi.GetValueOrDefault(x.Personel.Id) + islemSureSaat) <= NetVardiyaSuresi)
+                .OrderBy(x => _planKapasitesi.GetValueOrDefault(x.Personel.Id))   // adil dağılım
+                .ThenBy(x => x.YetkinlikSeviyesi - minSeviye)                      // min SV fazlası
+                .FirstOrDefault();
+
+            if (enIyi is null) continue;
 
             _planAtamalari[is_.Id] = enIyi.Personel.Id;
-            _planKapasitesi[enIyi.Personel.Id] = _planKapasitesi.GetValueOrDefault(enIyi.Personel.Id) + toplamSure;
+            _planKapasitesi[enIyi.Personel.Id] = _planKapasitesi.GetValueOrDefault(enIyi.Personel.Id) + islemSureSaat;
         }
 
-        Snackbar.Add("Otomatik dağılım tamamlandı.", Severity.Info);
+        var atanan = _planAtamalari.Count(kv => kv.Value.HasValue);
+        var atanamayan = _planAtamalari.Count(kv => !kv.Value.HasValue);
+        var egitimdeVar = _personeller.Any(p =>
+            p.AtolyeKodu == _atolyeler.FirstOrDefault(a => a.Id == _seciliAtolyeId)?.AtolyeKodu
+            && p.Durum == "Egitimde");
+
+        if (atanamayan > 0 && egitimdeVar)
+            Snackbar.Add($"{atanan} iş atandı — {atanamayan} iş atanamadı (bazı personel eğitimde).", Severity.Warning);
+        else if (atanamayan > 0)
+            Snackbar.Add($"{atanan} iş atandı — {atanamayan} iş için uygun personel bulunamadı.", Severity.Warning);
+        else
+            Snackbar.Add($"Tüm {atanan} iş başarıyla atandı.", Severity.Success);
     }
 
     private void PlanTemizle()
@@ -1737,7 +2406,7 @@
         _planAtamalari.Clear();
 
         _planKapasitesi.Clear();
-        await VerileriYukle();
+        await IslerYukle();
     }
 
     private int RiskSkoru()
